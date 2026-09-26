@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Property Finder</string>
+    <string name="title_activity_main">Property Finder</string>
+    <string name="package_name">com.propertyfinder.app</string>
+    <string name="custom_url_scheme">com.propertyfinder.app</string>
+</resources>
