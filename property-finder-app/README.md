@@ -11,10 +11,10 @@ An intelligent property search and discovery platform with **ML-based price pred
 
 ### 🏡 Buy and Sell Properties
 - Signed-in users can publish a property listing with its details, amenities, asking price, and a photo
-- Listings are saved to the local property database and appear in buyer search results
+- Listings are saved to the local property database and appear in Discover search results for all users; Discover refreshes while open
 - Sellers can view their own listings; buyers can email a seller from the property details
 - Listing photos must be JPG, PNG, or WebP and no larger than 5 MB
-- Account credentials, profile names, and saved homes use MongoDB when configured
+- Saved homes are stored per signed-in account; account credentials, profile names, and saved homes use MongoDB when configured
 
 ### 💰 Dual Price Prediction Models
 The app uses **two complementary prediction methods**:
