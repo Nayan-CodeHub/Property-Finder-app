@@ -65,7 +65,7 @@ property-finder-app/
 
 **Key Features**:
 - Search filters (BHK, price, location, furnished)
-- Interactive Leaflet map
+- Property search results and cards
 - Property list with cards
 - Price predictor calculator
 - Real-time API integration
@@ -73,13 +73,13 @@ property-finder-app/
 
 **Key Components**:
 - Filter panel
-- Map container
+- Main content area
 - Property cards grid
 - Price prediction form
 - Results display
 
 **Dependencies**:
-- React, Leaflet, React Leaflet, Axios/Fetch
+- React, Fetch API
 
 ---
 
@@ -89,9 +89,8 @@ property-finder-app/
 **Sections**:
 - Header styling (gradient background)
 - Sidebar layout (filters & predictor)
-- Main content area (map & properties)
+- Main content area (property results)
 - Property cards (grid layout)
-- Map container styling
 - Responsive design (mobile-friendly)
 - Color scheme and typography
 
@@ -120,7 +119,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 **Purpose**: HTML entry point for the application
 
 **Key Elements**:
-- Leaflet CSS CDN link
 - Root div for React
 - Script to load Vite + main.jsx
 - Viewport and meta tags
@@ -146,8 +144,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 - React 18.2.0
 - Express 4.18.2
 - TensorFlow.js 4.11.0
-- React Leaflet 4.2.1
-- Leaflet 1.9.4
 - Vite 4.4.9
 
 ---
@@ -395,8 +391,6 @@ server.js
 ```
 App.jsx
 ├── React (UI framework)
-├── react-leaflet (map integration)
-├── leaflet (mapping library)
 ├── CSS (App.css)
 └── Fetch API (HTTP requests)
 ```

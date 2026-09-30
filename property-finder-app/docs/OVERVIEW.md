@@ -15,11 +15,11 @@ A **complete, production-ready property finder application** with AI-powered pri
 │  • Filter by Location     • Dual predictions                │
 │  • Filter by Furnished    • Confidence scoring              │
 │                                                              │
-│  🗺️ INTERACTIVE MAP       🧠 MACHINE LEARNING               │
-│  • Show properties        • Trains on all properties        │
+│  🏘️ PROPERTY RESULTS      🧠 MACHINE LEARNING               │
+│  • Browse property cards • Trains on all properties        │
 │  • Click for details      • Neural network model            │
-│  • Zoom & pan            • Continuous learning             │
-│  • Responsive            • TensorFlow.js powered           │
+│  • Filtered results       • Continuous learning             │
+│  • Responsive             • TensorFlow.js powered           │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -48,16 +48,10 @@ http://localhost:3000
 ### 1️⃣ Property Search
 - Search thousands of properties
 - Filter by: BHK, Price, Location, Furnished status
-- Real-time results with map visualization
+- Real-time results in a property cards list
 - Property details with amenities
 
-### 2️⃣ Interactive Map
-- Leaflet-based mapping
-- Property markers with details
-- Hover & click interactions
-- Location-based search
-
-### 3️⃣ Dual Price Prediction
+### 2️⃣ Dual Price Prediction
 **Formula-Based** (Fast):
 ```
 Price = Size × ₹200/sqft × Location Multiplier × Furnished Bonus
@@ -69,7 +63,7 @@ Price = Size × ₹200/sqft × Location Multiplier × Furnished Bonus
 - Improves as more data is added
 - TensorFlow.js powered
 
-### 4️⃣ Smart Filters
+### 3️⃣ Smart Filters
 - BHK (Bedrooms): 1-5
 - Price: ₹100K to ₹1M
 - Location: Downtown, Suburbs, Outskirts
@@ -82,7 +76,6 @@ Price = Size × ₹200/sqft × Location Multiplier × Furnished Bonus
 | Layer | Technology | Why? |
 |-------|-----------|------|
 | **Frontend** | React 18 + Vite | Fast, component-based, modern |
-| **Maps** | Leaflet | Lightweight, no API key needed |
 | **Backend** | Node.js + Express | JavaScript full-stack |
 | **ML** | TensorFlow.js | Browser/Node.js ML, accessible |
 | **Database** | JSON (MongoDB-ready) | Flexible, scalable |
@@ -246,7 +239,6 @@ Learns relationship between property features and prices using neural network.
 | Formula prediction | <1ms |
 | ML prediction | 5-10ms |
 | Property search | <50ms |
-| Map render | <200ms |
 
 ---
 
@@ -257,23 +249,20 @@ Learns relationship between property features and prices using neural network.
 ┌─────────────────────────────────┐
 │      Header (Blue Gradient)     │
 ├─────┬───────────────────────────┤
-│     │                           │
-│     │                           │
-│Filters │  Interactive Map       │
-│ Panel  │  (Leaflet.js)          │
-│       │                           │
-│       │                           │
-├─────┴───────────────────────────┤
-│  Property Cards List (Scrollable)│
+│     │ Property Cards             │
+│Filters│ (Scrollable Results)     │
+│Panel │                            │
+│      │                            │
+├──────┴────────────────────────────┤
+│                                    │
 └─────────────────────────────────┘
 ```
 
 ### Search Flow
 1. Adjust filters (left sidebar)
 2. Click Search
-3. Properties appear on map
-4. Click property cards to highlight
-5. Click map markers for details
+3. Browse matching property cards
+4. Click a property card for details
 
 ### Price Predictor
 1. Enter specs (right sidebar)

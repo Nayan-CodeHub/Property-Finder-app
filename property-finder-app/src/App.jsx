@@ -1,14 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
-import L from 'leaflet';
 import './App.css';
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png'
-});
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
 const FAVORITES_KEY = 'property-finder-favorites';
@@ -82,7 +73,7 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }) {
   );
 }
 
-function AccountView({ view, session, favorites, properties, onSignOut, onSessionChange }) {
+function AccountView({ view, session, favorites, properties, myProperties, onSignOut, onSessionChange, onSelectProperty, onCreateListing }) {
   if (view === 'saved') {
     const savedProperties = properties.filter(property => favorites.includes(property.id));
     return <section className="account-view"><span className="auth-kicker">Your collection</span><h2>Saved homes</h2><p className="account-lede">Keep the places you want to come back to close at hand.</p>{savedProperties.length ? <div className="saved-property-grid">{savedProperties.map(property => <article className="saved-property" key={property.id}><img src={property.imageUrl} alt={property.name} /><div><strong>{property.name}</strong><span>{property.location} · {property.bhk} BHK</span></div></article>)}</div> : <div className="saved-empty"><span className="empty-icon">♡</span><h3>Your shortlist is empty</h3><p>Tap the heart on any property to save it here.</p></div>}</section>;
@@ -90,21 +81,165 @@ function AccountView({ view, session, favorites, properties, onSignOut, onSessio
   if (view === 'settings') {
     return <section className="account-view"><span className="auth-kicker">Preferences</span><h2>Settings</h2><p className="account-lede">Make Property Finder feel right for you.</p><div className="settings-list"><div><div><strong>Email updates</strong><span>Receive new homes that match your taste</span></div><input type="checkbox" defaultChecked /></div><div><div><strong>Price display</strong><span>Show prices in Indian rupees</span></div><select defaultValue="inr"><option value="inr">INR · ₹</option></select></div><div><div><strong>Appearance</strong><span>Keep the interface light and focused</span></div><span className="setting-pill">Light</span></div></div></section>;
   }
+  if (view === 'my-listings') {
+    return <section className="account-view"><span className="auth-kicker">Your properties</span><h2>My listings</h2><p className="account-lede">Manage the homes you have shared with buyers.</p>{myProperties.length ? <div className="saved-property-grid">{myProperties.map(property => <article className="saved-property" key={property.id}><img src={property.imageUrl} alt={property.name} /><div><strong>{property.name}</strong><span>{property.location} · {property.bhk} BHK · ₹{Number(property.actualPrice).toLocaleString()}</span><button className="btn btn-secondary" onClick={() => onSelectProperty(property)}>View listing</button></div></article>)}</div> : <div className="saved-empty"><span className="empty-icon">⌂</span><h3>You have not listed a property yet</h3><p>Create a listing so home seekers can discover and contact you.</p><button className="btn btn-primary listing-submit" onClick={onCreateListing}>List a property</button></div>}</section>;
+  }
   return <ProfileView session={session} favorites={favorites} properties={properties} onSignOut={onSignOut} onSessionChange={onSessionChange} />;
 }
 
 function ProfileView({ session, favorites, properties, onSignOut, onSessionChange }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(session.name);
-  const saveProfile = event => {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => setName(session.name), [session.name]);
+
+  const saveProfile = async event => {
     event.preventDefault();
-    const updatedSession = { ...session, name: name.trim() || session.name };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
-    onSessionChange(updatedSession);
-    setEditing(false);
+    setError('');
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_BASE}/account/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`
+        },
+        body: JSON.stringify({ name: name.trim() })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to save profile changes.');
+      const updatedSession = { ...result.user, token: session.token };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
+      onSessionChange(updatedSession);
+      setEditing(false);
+    } catch (saveError) {
+      setError(saveError.message === 'Failed to fetch' ? 'The server is unavailable. Please try again.' : saveError.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  return <section className="account-view"><span className="auth-kicker">Your account</span><h2>Profile</h2><p className="account-lede">Manage your details and make your search more personal.</p><div className="profile-card"><div className="profile-avatar">{session.name?.charAt(0).toUpperCase()}</div>{editing ? <form className="profile-edit-form" onSubmit={saveProfile}><label>Full name<input value={name} onChange={event => setName(event.target.value)} autoFocus /></label><div><button className="btn btn-primary" type="submit">Save changes</button><button className="cancel-edit" type="button" onClick={() => setEditing(false)}>Cancel</button></div></form> : <><div><h3>{session.name}</h3><p>{session.email}</p><span className="member-since">Member since today</span></div><button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit profile</button></>}</div><div className="profile-stats"><div><strong>{favorites.length}</strong><span>saved homes</span></div><div><strong>0</strong><span>active alerts</span></div><div><strong>{properties.length}</strong><span>market listings</span></div></div><button className="sign-out" onClick={onSignOut}>Sign out of this device</button></section>;
+  return <section className="account-view"><span className="auth-kicker">Your account</span><h2>Profile</h2><p className="account-lede">Manage your details and make your search more personal.</p><div className="profile-card"><div className="profile-avatar">{session.name?.charAt(0).toUpperCase()}</div>{editing ? <form className="profile-edit-form" onSubmit={saveProfile}><label>Full name<input required maxLength="80" value={name} onChange={event => setName(event.target.value)} autoFocus /></label>{error && <p className="form-error" role="alert">{error}</p>}<div><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button><button className="cancel-edit" type="button" disabled={saving} onClick={() => { setName(session.name); setEditing(false); setError(''); }}>Cancel</button></div></form> : <><div><h3>{session.name}</h3><p>{session.email}</p><span className="member-since">Member since today</span></div><button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit profile</button></>}</div><div className="profile-stats"><div><strong>{favorites.length}</strong><span>saved homes</span></div><div><strong>0</strong><span>active alerts</span></div><div><strong>{properties.length}</strong><span>market listings</span></div></div><button className="sign-out" onClick={onSignOut}>Sign out of this device</button></section>;
+}
+
+function SellPropertyForm({ session, onCreated }) {
+  const [form, setForm] = useState({
+    name: '', location: '', propertyType: 'Apartment', bhk: '2', bathrooms: '1',
+    size: '', actualPrice: '', yearBuilt: '', furnished: false, amenities: '', description: ''
+  });
+  const [imageUrl, setImageUrl] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const updateField = (field, value) => setForm(current => ({ ...current, [field]: value }));
+
+  const selectPhoto = event => {
+    const file = event.target.files?.[0];
+    setError('');
+    if (!file) {
+      setImageUrl('');
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setImageUrl('');
+      event.target.value = '';
+      setError('Choose a JPG, PNG, or WebP photo smaller than 5 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setImageUrl(String(reader.result));
+    reader.onerror = () => setError('We could not read that photo. Please choose it again.');
+    reader.readAsDataURL(file);
+  };
+
+  const submit = async event => {
+    event.preventDefault();
+    setError('');
+    if (!imageUrl) {
+      setError('Add a property photo before publishing your listing.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_BASE}/properties`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`
+        },
+        body: JSON.stringify({
+          ...form,
+          bhk: Number(form.bhk),
+          bathrooms: Number(form.bathrooms),
+          size: Number(form.size),
+          actualPrice: Number(form.actualPrice),
+          yearBuilt: form.yearBuilt ? Number(form.yearBuilt) : null,
+          amenities: form.amenities.split(',').map(amenity => amenity.trim()).filter(Boolean),
+          imageUrl
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to publish your listing.');
+      onCreated(result);
+    } catch (submitError) {
+      setError(submitError.message === 'Failed to fetch' ? 'The server is unavailable. Please try again.' : submitError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="account-view sell-view">
+      <span className="auth-kicker">For property owners</span>
+      <h2>List your property</h2>
+      <p className="account-lede">Share your home with people looking for a place just like yours. Buyers can contact you directly by email.</p>
+      <form className="listing-form" onSubmit={submit}>
+        <label className="listing-field listing-field-wide">Property title
+          <input required maxLength="120" value={form.name} onChange={event => updateField('name', event.target.value)} placeholder="e.g. Bright 2-bedroom apartment" />
+        </label>
+        <div className="listing-fields">
+          <label className="listing-field">Location / neighborhood
+            <input required maxLength="120" value={form.location} onChange={event => updateField('location', event.target.value)} placeholder="e.g. Downtown" />
+          </label>
+          <label className="listing-field">Property type
+            <select value={form.propertyType} onChange={event => updateField('propertyType', event.target.value)}>
+              <option>Apartment</option><option>Villa</option><option>Penthouse</option>
+            </select>
+          </label>
+          <label className="listing-field">Bedrooms (BHK)
+            <input required type="number" min="1" max="20" value={form.bhk} onChange={event => updateField('bhk', event.target.value)} />
+          </label>
+          <label className="listing-field">Bathrooms
+            <input required type="number" min="1" max="30" value={form.bathrooms} onChange={event => updateField('bathrooms', event.target.value)} />
+          </label>
+          <label className="listing-field">Area (sq ft)
+            <input required type="number" min="1" value={form.size} onChange={event => updateField('size', event.target.value)} />
+          </label>
+          <label className="listing-field">Asking price (₹)
+            <input required type="number" min="1" value={form.actualPrice} onChange={event => updateField('actualPrice', event.target.value)} />
+          </label>
+          <label className="listing-field">Year built (optional)
+            <input type="number" min="1800" max={new Date().getFullYear() + 2} value={form.yearBuilt} onChange={event => updateField('yearBuilt', event.target.value)} />
+          </label>
+          <label className="listing-field">Amenities (comma-separated)
+            <input value={form.amenities} onChange={event => updateField('amenities', event.target.value)} placeholder="Parking, Garden, Security" />
+          </label>
+        </div>
+        <label className="listing-checkbox"><input type="checkbox" checked={form.furnished} onChange={event => updateField('furnished', event.target.checked)} /> This property is furnished</label>
+        <label className="listing-field listing-field-wide">Description
+          <textarea maxLength="3000" rows="4" value={form.description} onChange={event => updateField('description', event.target.value)} placeholder="Tell buyers what makes this home special." />
+        </label>
+        <label className="listing-field listing-field-wide">Property photo (JPG, PNG, or WebP; max 5 MB)
+          <input required type="file" accept="image/jpeg,image/png,image/webp" onChange={selectPhoto} />
+        </label>
+        {imageUrl && <img className="listing-photo-preview" src={imageUrl} alt="Preview of your property listing" />}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="btn btn-primary listing-submit" type="submit" disabled={saving}>{saving ? 'Publishing listing...' : 'Publish property'}</button>
+      </form>
+    </section>
+  );
 }
 
 export default function App() {
@@ -114,14 +249,19 @@ export default function App() {
   });
   const [authMode, setAuthMode] = useState('login');
   const [activeView, setActiveView] = useState('discover');
-  const [showMap, setShowMap] = useState(false);
   const [properties, setProperties] = useState([]);
+  const [myProperties, setMyProperties] = useState([]);
+  const [myPropertiesError, setMyPropertiesError] = useState('');
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [filters, setFilters] = useState(defaultFilters);
-  const [favorites, setFavorites] = useState(() => JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'));
+  const [favorites, setFavorites] = useState([]);
+  const [accountReady, setAccountReady] = useState(false);
+  const [favoritesBusy, setFavoritesBusy] = useState(false);
+  const [accountError, setAccountError] = useState('');
+  const [accountReload, setAccountReload] = useState(0);
   const [modelTrained, setModelTrained] = useState(false);
   const [predictor, setPredictor] = useState({ bhk: 2, size: 900, location: 'Downtown', furnished: true });
   const [prediction, setPrediction] = useState(null);
@@ -132,19 +272,93 @@ export default function App() {
     trainModel();
   }, []);
 
-  useEffect(() => localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)), [favorites]);
+  useEffect(() => {
+    setMyProperties([]);
+    setMyPropertiesError('');
+    if (activeView !== 'my-listings' || !session?.token) return;
+    fetch(`${API_BASE}/my-properties`, { headers: { Authorization: `Bearer ${session.token}` } })
+      .then(async response => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Unable to load your listings.');
+        setMyProperties(result);
+      })
+      .catch(error => {
+        setMyPropertiesError(error.message);
+        console.error('Error fetching your property listings:', error);
+      });
+  }, [activeView, session?.token]);
 
   useEffect(() => {
-    if (!session?.token) return;
-    fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(response => {
+    if (!session?.token) {
+      setAccountReady(false);
+      return;
+    }
+
+    let active = true;
+    const loadAccount = async () => {
+      setAccountReady(false);
+      setAccountError('');
+      let loaded = false;
+      try {
+        const response = await fetch(`${API_BASE}/account`, {
+          headers: { Authorization: `Bearer ${session.token}` }
+        });
+        const result = await response.json();
         if (!response.ok) {
-          localStorage.removeItem(SESSION_KEY);
-          setSession(null);
+          if (response.status === 401) {
+            localStorage.removeItem(SESSION_KEY);
+            setSession(null);
+            return;
+          }
+          throw new Error(result.error || 'Unable to load your account data.');
         }
-      })
-      .catch(() => {});
-  }, [session?.token]);
+        if (!active) return;
+
+        const accountFavorites = Array.isArray(result.favorites)
+          ? result.favorites.filter(id => Number.isSafeInteger(id) && id > 0)
+          : [];
+        const previousBrowserFavorites = readStorage(FAVORITES_KEY, []);
+        const legacyFavorites = Array.isArray(previousBrowserFavorites)
+          ? previousBrowserFavorites.map(Number).filter(id => Number.isSafeInteger(id) && id > 0)
+          : [];
+        const mergedFavorites = [...new Set([...accountFavorites, ...legacyFavorites])];
+        let savedFavorites = accountFavorites;
+
+        if (mergedFavorites.length !== accountFavorites.length) {
+          const saveResponse = await fetch(`${API_BASE}/account/favorites`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.token}`
+            },
+            body: JSON.stringify({ propertyIds: mergedFavorites })
+          });
+          const savedResult = await saveResponse.json();
+          if (!saveResponse.ok) {
+            throw new Error(savedResult.error || 'Unable to sync previously saved homes.');
+          }
+          savedFavorites = savedResult.favorites;
+        }
+        if (!active) return;
+
+        const refreshedSession = { ...result.user, token: session.token };
+        setSession(refreshedSession);
+        localStorage.setItem(SESSION_KEY, JSON.stringify(refreshedSession));
+        setFavorites(savedFavorites);
+        localStorage.removeItem(FAVORITES_KEY);
+        loaded = true;
+      } catch (error) {
+        if (!active) return;
+        setAccountError(error.message || 'Unable to load your account data.');
+        console.error('Error loading account data:', error);
+      } finally {
+        if (active) setAccountReady(loaded);
+      }
+    };
+
+    loadAccount();
+    return () => { active = false; };
+  }, [session?.token, accountReload]);
 
   const fetchLocations = async () => {
     try {
@@ -194,8 +408,46 @@ export default function App() {
 
   const formatPrice = price => `₹${Number(price).toLocaleString()}`;
   const updateFilter = (field, value) => setFilters(current => ({ ...current, [field]: value }));
-  const toggleFavorite = id => setFavorites(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  const toggleFavorite = async id => {
+    if (!accountReady || favoritesBusy) return;
+    const nextFavorites = favorites.includes(id)
+      ? favorites.filter(item => item !== id)
+      : [...favorites, id];
+    setFavoritesBusy(true);
+    setAccountError('');
+    try {
+      const response = await fetch(`${API_BASE}/account/favorites`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`
+        },
+        body: JSON.stringify({ propertyIds: nextFavorites })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to save this home.');
+      setFavorites(result.favorites);
+    } catch (error) {
+      setAccountError(error.message === 'Failed to fetch' ? 'The server is unavailable. Your saved homes were not changed.' : error.message);
+      console.error('Error saving favorites:', error);
+    } finally {
+      setFavoritesBusy(false);
+    }
+  };
   const updatePredictor = (field, value) => setPredictor(current => ({ ...current, [field]: value }));
+  const handlePropertyCreated = property => {
+    setMyProperties(current => [property, ...current]);
+    fetchProperties();
+    setActiveView('my-listings');
+    fetchLocations();
+  };
+  const signOut = () => {
+    localStorage.removeItem(SESSION_KEY);
+    setSession(null);
+    setFavorites([]);
+    setAccountError('');
+    setActiveView('discover');
+  };
 
   if (!session) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={setSession} />;
 
@@ -203,10 +455,11 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-brand"><span className="brand-mark">⌂</span><div><h1>Havenly</h1><p>Your thoughtful property search</p></div></div>
-        <nav className="dashboard-nav"><button className={activeView === 'discover' ? 'active' : ''} onClick={() => setActiveView('discover')}>Discover</button><button className={activeView === 'saved' ? 'active' : ''} onClick={() => setActiveView('saved')}>Saved <span>{favorites.length}</span></button><button className={activeView === 'profile' ? 'active' : ''} onClick={() => setActiveView('profile')}>Profile</button><button className={activeView === 'settings' ? 'active' : ''} onClick={() => setActiveView('settings')}>Settings</button></nav>
+        <nav className="dashboard-nav"><button className={activeView === 'discover' ? 'active' : ''} onClick={() => setActiveView('discover')}>Discover</button><button className={activeView === 'saved' ? 'active' : ''} onClick={() => setActiveView('saved')}>Saved <span>{favorites.length}</span></button><button className={activeView === 'sell' ? 'active' : ''} onClick={() => setActiveView('sell')}>Sell</button><button className={activeView === 'my-listings' ? 'active' : ''} onClick={() => setActiveView('my-listings')}>My listings</button><button className={activeView === 'profile' ? 'active' : ''} onClick={() => setActiveView('profile')}>Profile</button><button className={activeView === 'settings' ? 'active' : ''} onClick={() => setActiveView('settings')}>Settings</button></nav>
         <div className="header-actions"><span className="badge">{modelTrained ? '● Market ready' : '○ Preparing market'}</span><button className="header-avatar" onClick={() => setActiveView('profile')}>{session.name?.charAt(0).toUpperCase()}</button></div>
       </header>
-      {activeView !== 'discover' ? <main className="account-main"><AccountView view={activeView} session={session} favorites={favorites} properties={properties} onSessionChange={setSession} onSignOut={() => { localStorage.removeItem(SESSION_KEY); setSession(null); }} /></main> : <div className="container">
+      {accountError && <div className="account-sync-error" role="alert"><span>{accountError}</span><button onClick={() => setAccountReload(value => value + 1)}>Retry</button></div>}
+      {activeView !== 'discover' ? <main className="account-main">{activeView === 'sell' ? <SellPropertyForm session={session} onCreated={handlePropertyCreated} /> : <><AccountView view={activeView} session={session} favorites={favorites} properties={properties} myProperties={myProperties} onSelectProperty={setSelectedProperty} onCreateListing={() => setActiveView('sell')} onSessionChange={setSession} onSignOut={signOut} />{myPropertiesError && activeView === 'my-listings' && <p className="form-error" role="alert">{myPropertiesError}</p>}</>}</main> : <div className="container">
         <aside className="sidebar">
           <section className="filters-section">
             <h3>🔍 Search Properties</h3>
@@ -230,11 +483,10 @@ export default function App() {
           </section>
         </aside>
         <main className="main">
-          {showMap && <div className="map-container"><MapContainer center={[28.6139, 77.2090]} zoom={12} style={{ height: '100%', width: '100%' }}><TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />{properties.map(property => <Marker key={property.id} position={[property.latitude, property.longitude]} onClick={() => setSelectedProperty(property)}><Popup><div className="popup"><h4>{property.name}</h4><p><strong>{formatPrice(property.actualPrice)}</strong></p><p>{property.bhk} BHK · {property.size} sq ft</p><p>{property.location} · {property.propertyType}</p></div></Popup></Marker>)}</MapContainer></div>}
-          <div className={`properties-list ${showMap ? 'with-map' : 'full-results'}`}><div className="list-heading"><div><span className="section-kicker">Curated for you</span><h3>{properties.length ? 'Recommended homes' : 'No homes found'}</h3></div><div className="list-actions"><button className="map-toggle" onClick={() => setShowMap(current => !current)}>{showMap ? 'Hide map' : 'Open map'}</button><span>{favorites.length} saved</span></div></div>{loadError ? <div className="empty-state"><h3>{loadError}</h3><button className="btn btn-secondary" onClick={fetchProperties}>Try again</button></div> : <div className="cards-grid">{loading ? [1, 2, 3].map(index => <div className="property-skeleton" key={index} />) : properties.map(property => <article className={`property-card ${selectedProperty?.id === property.id ? 'active' : ''}`} key={property.id} onClick={() => setSelectedProperty(property)}><div className="card-image-wrap"><img className="card-image" src={property.imageUrl} alt={property.name} /><button className={`favorite-button ${favorites.includes(property.id) ? 'saved' : ''}`} onClick={event => { event.stopPropagation(); toggleFavorite(property.id); }} aria-label="Save property">{favorites.includes(property.id) ? '♥' : '♡'}</button></div><div className="card-content"><div className="card-header"><h4>{property.name}</h4><span className="price">{formatPrice(property.actualPrice)}</span></div><p className="property-meta">{property.propertyType} · {property.bhk} BHK · {property.bathrooms} bath · {property.size} sq ft</p><p className="property-location">📍 {property.location}</p><div className="amenities">{property.amenities.slice(0, 4).map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div><button className="btn btn-small" onClick={event => { event.stopPropagation(); setSelectedProperty(property); }}>View details →</button></div></article>)}</div>}{!loading && !loadError && properties.length === 0 && <div className="empty-state"><h3>No properties match these filters</h3><p>Try widening your budget or removing an amenity filter.</p></div>}</div>
+          <div className="properties-list full-results"><div className="list-heading"><div><span className="section-kicker">Curated for you</span><h3>{properties.length ? 'Recommended homes' : 'No homes found'}</h3></div><div className="list-actions"><span>{favorites.length} saved</span></div></div>{loadError ? <div className="empty-state"><h3>{loadError}</h3><button className="btn btn-secondary" onClick={fetchProperties}>Try again</button></div> : <div className="cards-grid">{loading ? [1, 2, 3].map(index => <div className="property-skeleton" key={index} />) : properties.map(property => <article className={`property-card ${selectedProperty?.id === property.id ? 'active' : ''}`} key={property.id} onClick={() => setSelectedProperty(property)}><div className="card-image-wrap"><img className="card-image" src={property.imageUrl} alt={property.name} /><button className={`favorite-button ${favorites.includes(property.id) ? 'saved' : ''}`} disabled={!accountReady || favoritesBusy} onClick={event => { event.stopPropagation(); toggleFavorite(property.id); }} aria-label="Save property">{favorites.includes(property.id) ? '♥' : '♡'}</button></div><div className="card-content"><div className="card-header"><h4>{property.name}</h4><span className="price">{formatPrice(property.actualPrice)}</span></div><p className="property-meta">{property.propertyType} · {property.bhk} BHK · {property.bathrooms} bath · {property.size} sq ft</p><p className="property-location">📍 {property.location}</p><div className="amenities">{property.amenities.slice(0, 4).map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div><button className="btn btn-small" onClick={event => { event.stopPropagation(); setSelectedProperty(property); }}>View details →</button></div></article>)}</div>}{!loading && !loadError && properties.length === 0 && <div className="empty-state"><h3>No properties match these filters</h3><p>Try widening your budget or removing an amenity filter.</p></div>}</div>
         </main>
       </div>}
-      {selectedProperty && <div className="modal-backdrop" onClick={() => setSelectedProperty(null)}><section className="property-modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={() => setSelectedProperty(null)} aria-label="Close details">×</button><img className="modal-image" src={selectedProperty.imageUrl} alt={selectedProperty.name} /><div className="modal-content"><div className="modal-title"><div><span className="eyebrow">{selectedProperty.propertyType} · {selectedProperty.location}</span><h2>{selectedProperty.name}</h2></div><button className={`favorite-button large ${favorites.includes(selectedProperty.id) ? 'saved' : ''}`} onClick={() => toggleFavorite(selectedProperty.id)}>{favorites.includes(selectedProperty.id) ? '♥' : '♡'}</button></div><strong className="modal-price">{formatPrice(selectedProperty.actualPrice)}</strong><p className="modal-description">{selectedProperty.description}</p><div className="detail-grid"><span><b>{selectedProperty.bhk}</b> bedrooms</span><span><b>{selectedProperty.bathrooms}</b> bathrooms</span><span><b>{selectedProperty.size}</b> sq ft</span><span><b>{selectedProperty.yearBuilt}</b> built</span><span><b>{formatPrice(selectedProperty.monthlyRent)}</b> estimated rent</span><span><b>{formatPrice(Math.round(selectedProperty.actualPrice / selectedProperty.size))}</b> per sq ft</span></div><div className="amenities modal-amenities">{selectedProperty.amenities.map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div><button className="btn btn-primary">Contact owner</button></div></section></div>}
+      {selectedProperty && <div className="modal-backdrop" onClick={() => setSelectedProperty(null)}><section className="property-modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={() => setSelectedProperty(null)} aria-label="Close details">×</button><img className="modal-image" src={selectedProperty.imageUrl} alt={selectedProperty.name} /><div className="modal-content"><div className="modal-title"><div><span className="eyebrow">{selectedProperty.propertyType} · {selectedProperty.location}</span><h2>{selectedProperty.name}</h2></div><button className={`favorite-button large ${favorites.includes(selectedProperty.id) ? 'saved' : ''}`} disabled={!accountReady || favoritesBusy} onClick={() => toggleFavorite(selectedProperty.id)}>{favorites.includes(selectedProperty.id) ? '♥' : '♡'}</button></div><strong className="modal-price">{formatPrice(selectedProperty.actualPrice)}</strong><p className="modal-description">{selectedProperty.description}</p><div className="detail-grid"><span><b>{selectedProperty.bhk}</b> bedrooms</span><span><b>{selectedProperty.bathrooms}</b> bathrooms</span><span><b>{selectedProperty.size}</b> sq ft</span><span><b>{selectedProperty.yearBuilt || 'Not specified'}</b> built</span><span><b>{selectedProperty.monthlyRent ? formatPrice(selectedProperty.monthlyRent) : 'Not specified'}</b> estimated rent</span><span><b>{formatPrice(Math.round(selectedProperty.actualPrice / selectedProperty.size))}</b> per sq ft</span></div><div className="amenities modal-amenities">{selectedProperty.amenities.map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div>{selectedProperty.sellerEmail ? <div className="seller-contact"><span>Listed by {selectedProperty.sellerName}</span><a className="btn btn-primary" href={`mailto:${selectedProperty.sellerEmail}?subject=${encodeURIComponent(`Property enquiry: ${selectedProperty.name}`)}`}>Email seller</a></div> : <p className="seller-contact">Seller contact details are not available for this listing.</p>}</div></section></div>}
     </div>
   );
 }

@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="feature-capacitor-android">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/property-finder-app/node_modules/@capacitor/android/capacitor/build/intermediates/merged_java_res/debug/mergeDebugJavaResource/feature-capacitor-android.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

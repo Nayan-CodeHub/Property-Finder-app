@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="assets2">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/assets/index-809a5aa3.js.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/assets/index-8f6ce899.css.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="public">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/icon.svg.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/cordova_plugins.js.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/service-worker.js.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/index.html.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/cordova.js.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/public/manifest.webmanifest.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

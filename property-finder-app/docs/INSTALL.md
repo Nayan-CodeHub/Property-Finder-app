@@ -50,7 +50,7 @@ npm install
 ```
 
 **What this does**: Downloads all required packages
-- React, Leaflet, Express, TensorFlow.js, etc.
+- React, Express, TensorFlow.js, etc.
 - Takes 2-3 minutes
 
 ### Step 3: Start the App
@@ -216,9 +216,6 @@ Ctrl + C (or Cmd + C on Mac)
 ### "Backend not responding"
 → Check if backend is running on port 5000
 
-### "Map not loading"
-→ Check internet connection (needs map tiles)
-
 ### More issues?
 → See README.md troubleshooting section
 
@@ -274,7 +271,7 @@ See **README.md** for detailed deployment instructions.
 
 ✅ Search 6+ sample properties
 ✅ Filter by BHK, price, location, furnished
-✅ View properties on interactive map
+✅ Browse property cards
 ✅ Predict property prices (2 methods)
 ✅ Download and customize
 ✅ Deploy to production

@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="assets">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/capacitor.plugins.json.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/native-bridge.js.jar!/" />
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/app/build/intermediates/compressed_assets/debug/compressDebugAssets/out/assets/capacitor.config.json.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
