@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
-const FAVORITES_KEY = 'property-finder-favorites';
 const SESSION_KEY = 'property-finder-session';
-const defaultFilters = { bhk: 'all', minPrice: '', maxPrice: 1000000, minSize: '', location: 'all', propertyType: 'all', amenity: 'all', furnished: 'all', sort: 'price-low' };
+const defaultFilters = { bhk: 'all', minPrice: '', maxPrice: '', minSize: '', location: 'all', propertyType: 'all', amenity: 'all', furnished: 'all', sort: 'price-low' };
 
 function readStorage(key, fallback) {
   try {
@@ -247,6 +246,7 @@ export default function App() {
     const savedSession = readStorage(SESSION_KEY, null);
     return savedSession?.token ? savedSession : null;
   });
+  const activeSessionToken = useRef(session?.token || null);
   const [authMode, setAuthMode] = useState('login');
   const [activeView, setActiveView] = useState('discover');
   const [properties, setProperties] = useState([]);
@@ -257,6 +257,8 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [filters, setFilters] = useState(defaultFilters);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
   const [favorites, setFavorites] = useState([]);
   const [accountReady, setAccountReady] = useState(false);
   const [favoritesBusy, setFavoritesBusy] = useState(false);
@@ -268,7 +270,6 @@ export default function App() {
 
   useEffect(() => {
     fetchLocations();
-    fetchProperties();
     trainModel();
   }, []);
 
@@ -304,48 +305,26 @@ export default function App() {
           headers: { Authorization: `Bearer ${session.token}` }
         });
         const result = await response.json();
+        if (!active) return;
         if (!response.ok) {
           if (response.status === 401) {
             localStorage.removeItem(SESSION_KEY);
+            activeSessionToken.current = null;
             setSession(null);
             return;
           }
           throw new Error(result.error || 'Unable to load your account data.');
         }
-        if (!active) return;
 
         const accountFavorites = Array.isArray(result.favorites)
           ? result.favorites.filter(id => Number.isSafeInteger(id) && id > 0)
           : [];
-        const previousBrowserFavorites = readStorage(FAVORITES_KEY, []);
-        const legacyFavorites = Array.isArray(previousBrowserFavorites)
-          ? previousBrowserFavorites.map(Number).filter(id => Number.isSafeInteger(id) && id > 0)
-          : [];
-        const mergedFavorites = [...new Set([...accountFavorites, ...legacyFavorites])];
-        let savedFavorites = accountFavorites;
-
-        if (mergedFavorites.length !== accountFavorites.length) {
-          const saveResponse = await fetch(`${API_BASE}/account/favorites`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.token}`
-            },
-            body: JSON.stringify({ propertyIds: mergedFavorites })
-          });
-          const savedResult = await saveResponse.json();
-          if (!saveResponse.ok) {
-            throw new Error(savedResult.error || 'Unable to sync previously saved homes.');
-          }
-          savedFavorites = savedResult.favorites;
-        }
         if (!active) return;
 
         const refreshedSession = { ...result.user, token: session.token };
         setSession(refreshedSession);
         localStorage.setItem(SESSION_KEY, JSON.stringify(refreshedSession));
-        setFavorites(savedFavorites);
-        localStorage.removeItem(FAVORITES_KEY);
+        setFavorites(accountFavorites);
         loaded = true;
       } catch (error) {
         if (!active) return;
@@ -369,12 +348,12 @@ export default function App() {
     }
   };
 
-  const fetchProperties = async () => {
+  const fetchProperties = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
       const query = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
+      Object.entries(filtersRef.current).forEach(([key, value]) => {
         if (value !== '' && value !== 'all') query.append(key, value);
       });
       const response = await fetch(`${API_BASE}/properties?${query}`);
@@ -386,7 +365,23 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (activeView !== 'discover') return undefined;
+
+    const refreshVisibleProperties = () => {
+      if (document.visibilityState === 'visible') fetchProperties();
+    };
+    refreshVisibleProperties();
+    const refreshInterval = window.setInterval(refreshVisibleProperties, 30000);
+    document.addEventListener('visibilitychange', refreshVisibleProperties);
+
+    return () => {
+      window.clearInterval(refreshInterval);
+      document.removeEventListener('visibilitychange', refreshVisibleProperties);
+    };
+  }, [activeView, fetchProperties]);
 
   const trainModel = async () => {
     try {
@@ -410,6 +405,7 @@ export default function App() {
   const updateFilter = (field, value) => setFilters(current => ({ ...current, [field]: value }));
   const toggleFavorite = async id => {
     if (!accountReady || favoritesBusy) return;
+    const token = session.token;
     const nextFavorites = favorites.includes(id)
       ? favorites.filter(item => item !== id)
       : [...favorites, id];
@@ -420,36 +416,50 @@ export default function App() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ propertyIds: nextFavorites })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Unable to save this home.');
+      if (activeSessionToken.current !== token) return;
       setFavorites(result.favorites);
     } catch (error) {
-      setAccountError(error.message === 'Failed to fetch' ? 'The server is unavailable. Your saved homes were not changed.' : error.message);
+      if (activeSessionToken.current === token) {
+        setAccountError(error.message === 'Failed to fetch' ? 'The server is unavailable. Your saved homes were not changed.' : error.message);
+      }
       console.error('Error saving favorites:', error);
     } finally {
-      setFavoritesBusy(false);
+      if (activeSessionToken.current === token) setFavoritesBusy(false);
     }
   };
   const updatePredictor = (field, value) => setPredictor(current => ({ ...current, [field]: value }));
   const handlePropertyCreated = property => {
     setMyProperties(current => [property, ...current]);
-    fetchProperties();
-    setActiveView('my-listings');
+    setActiveView('discover');
     fetchLocations();
   };
   const signOut = () => {
     localStorage.removeItem(SESSION_KEY);
+    activeSessionToken.current = null;
     setSession(null);
     setFavorites([]);
+    setAccountReady(false);
+    setFavoritesBusy(false);
     setAccountError('');
     setActiveView('discover');
   };
 
-  if (!session) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={setSession} />;
+  const handleAuthenticated = authenticatedSession => {
+    activeSessionToken.current = authenticatedSession.token;
+    setFavorites([]);
+    setAccountReady(false);
+    setFavoritesBusy(false);
+    setAccountError('');
+    setSession(authenticatedSession);
+  };
+
+  if (!session) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={handleAuthenticated} />;
 
   return (
     <div className="app">
