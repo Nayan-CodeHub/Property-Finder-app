@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="feature-capacitor-cordova-android-plugins">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/property-finder-app/android/capacitor-cordova-android-plugins/build/intermediates/merged_java_res/debug/mergeDebugJavaResource/feature-capacitor-cordova-android-plugins.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

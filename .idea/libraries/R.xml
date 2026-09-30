@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="R">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/property-finder-app/node_modules/@capacitor/android/capacitor/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

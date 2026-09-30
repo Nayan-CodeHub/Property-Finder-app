@@ -9,11 +9,12 @@ An intelligent property search and discovery platform with **ML-based price pred
 - Real-time search results with instant filtering
 - Support for multiple locations with dynamic location loading
 
-### 🗺️ Interactive Map
-- Display properties on an interactive map using Leaflet
-- Click markers to view property details
-- Zoom and pan controls for better navigation
-- Popup information with price, BHK, size, and location details
+### 🏡 Buy and Sell Properties
+- Signed-in users can publish a property listing with its details, amenities, asking price, and a photo
+- Listings are saved to the local property database and appear in buyer search results
+- Sellers can view their own listings; buyers can email a seller from the property details
+- Listing photos must be JPG, PNG, or WebP and no larger than 5 MB
+- Account credentials, profile names, and saved homes use MongoDB when configured
 
 ### 💰 Dual Price Prediction Models
 The app uses **two complementary prediction methods**:
@@ -52,14 +53,13 @@ Price = Size × Base Price per sq ft × Location Multiplier × Furnished Bonus
 ### Frontend
 - **React 18** - UI Framework
 - **Vite** - Build tool & dev server
-- **React Leaflet** - Map integration
-- **Leaflet** - Mapping library
 - **CSS3** - Modern styling
 
 ### Backend
 - **Node.js + Express** - Server framework
 - **TensorFlow.js** - Machine learning in Node.js
-- **SQLite** - Persistent local property database (`server/data/properties.db`)
+- **MongoDB** - Account credentials, profile names, and saved homes (when configured)
+- **SQLite** - Property listings and sample property data (`server/data/properties.db`)
 - **CORS** - Cross-origin resource sharing
 
 ## 📋 Prerequisites
@@ -83,7 +83,19 @@ cd property-finder-app
 npm install
 ```
 
-This installs the frontend, backend, and SQLite dependencies. The database file is created and populated with sample properties the first time the server starts.
+This installs the frontend, backend, SQLite, and MongoDB dependencies. The local property database is created and populated with sample listings the first time the server starts.
+
+### Configure MongoDB account storage
+
+1. Copy `.env.example` to `.env` in the project folder.
+2. In MongoDB Atlas, create a database user, allow your current IP in Network Access, and choose **Connect → Drivers**.
+3. Put the Atlas connection string in `MONGODB_URI` in `.env`, replacing `USERNAME`, `PASSWORD`, and `CLUSTER_HOST` with your values. URI-encode special characters in the database password.
+4. Keep `MONGODB_DATABASE=property_finder` or set it to your preferred database name.
+5. Restart the backend with `npm run server` (or restart `npm run dev`).
+
+Do not share or commit `.env`; it is ignored by Git. When `MONGODB_URI` is set, account records (including password hashes), profile names, and saved home IDs are stored in MongoDB. Existing local accounts and saved homes are copied to MongoDB the first time the backend connects. Property listings and uploaded listing images continue to use the SQLite database at `server/data/properties.db`.
+
+Without `MONGODB_URI`, the app retains its SQLite-only account storage for local development.
 
 ### Step 3: Start Both Servers
 ```bash
@@ -187,6 +199,14 @@ Get list of all available locations.
 ### GET `/api/properties/:id`
 Get details of a specific property.
 
+### Account endpoints
+
+The following endpoints require `Authorization: Bearer <token>`:
+
+- `GET /api/account` - Load account profile and saved property IDs
+- `PUT /api/account/profile` - Save the account name
+- `PUT /api/account/favorites` - Save the account's property IDs as `{ "propertyIds": [1, 2] }`
+
 ### POST `/api/properties`
 Add a new property to the SQLite database. Required JSON fields: `name`, `location`, `latitude`, `longitude`, `bhk`, `size`, `furnished`, `actualPrice`, and `amenities` (an array of strings). The database is stored at `server/data/properties.db` and seeded with the six sample properties only when first created. Back up this file to preserve local property data.
 
@@ -233,10 +253,9 @@ Dense(1) - Linear Output (Price)
    - **Location**: Choose from dropdown
    - **Furnished**: Select preference
 3. Click **Search** button
-4. Properties appear on map and in the list below
+4. Browse matching properties in the results list
 
 ### 2. View Property Details
-- Click any **marker on the map** for quick popup info
 - Click any **property card** in the list for details
 - Cards highlight when selected
 - View all amenities and specifications
@@ -363,11 +382,6 @@ Ensure backend is running on port 5000 and API_BASE in App.jsx is correct:
 const API_BASE = 'http://localhost:5000/api';
 ```
 
-### Map not loading
-- Check internet connection (needs map tiles)
-- Verify Leaflet CSS is loaded in index.html
-- Check browser console for errors
-
 ### ML Model not training
 - Ensure properties have valid data
 - Check browser console for TensorFlow.js errors
@@ -378,7 +392,6 @@ const API_BASE = 'http://localhost:5000/api';
 - **React**: https://react.dev
 - **Express**: https://expressjs.com
 - **TensorFlow.js**: https://www.tensorflow.org/js
-- **Leaflet**: https://leafletjs.com
 - **Vite**: https://vitejs.dev
 
 ## 📝 Future Enhancements

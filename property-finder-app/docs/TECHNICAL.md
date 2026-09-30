@@ -20,7 +20,7 @@ Deep dive into the architecture, algorithms, and implementation details of the P
 ┌─────────────────────────────────────────────────────────────┐
 │                     React Frontend (Port 3000)              │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  Search Panel │ Map Component │ Property Cards       │  │
+│  │  Search Panel │ Property Cards │ Price Predictor      │  │
 │  │  Price Predictor │ Filters │ Results Display         │  │
 │  └──────────────────────────────────────────────────────┘  │
 └────────────────────────┬──────────────────────────────────┘
@@ -49,7 +49,6 @@ Deep dive into the architecture, algorithms, and implementation details of the P
 |-----------|-----------|------|
 | Frontend UI | React 18 | Component-based, reactive, large ecosystem |
 | Build Tool | Vite | Fast cold start, hot module replacement |
-| Maps | Leaflet + React Leaflet | Lightweight, open-source, no API key required |
 | Backend | Express.js | Lightweight, Node.js ecosystem, easy to scale |
 | ML Framework | TensorFlow.js | Browser/Node.js ML, no Python dependency |
 | Data Storage | JSON (MongoDB ready) | Flexible schema, easy to prototype |
@@ -350,9 +349,6 @@ Content-Type: application/json
   │   │   ├── <FilterPanel />
   │   │   └── <PricePredictorPanel />
   │   └── <MainContent>
-  │       ├── <MapContainer>
-  │       │   └── <Leaflet Map>
-  │       │       └── <Markers>
   │       └── <PropertiesList>
   │           └── <PropertyCard[] />
   └── </Container>
@@ -365,11 +361,6 @@ Content-Type: application/json
 - API calls orchestration
 - Model training trigger
 
-#### MapContainer (Leaflet Map)
-- Real-time marker rendering
-- Click handlers for property selection
-- Popup display with property details
-
 #### SideBar (Search & Prediction)
 - Filter controls (inputs, sliders, selects)
 - Apply filters button
@@ -380,7 +371,7 @@ Content-Type: application/json
 - Property name and price
 - Details: BHK, Size, Location, Furnished
 - Amenities display
-- Click to highlight on map
+- Click to open property details
 
 ---
 
@@ -447,7 +438,6 @@ db.properties.createIndex({ bhk: 1 })
 | Formula Prediction | <1ms |
 | ML Prediction | 5-10ms |
 | Property Search | <50ms |
-| Map Rendering | <200ms |
 | Bundle Size | ~500KB (before gzip) |
 | Bundle Size | ~150KB (gzipped) |
 

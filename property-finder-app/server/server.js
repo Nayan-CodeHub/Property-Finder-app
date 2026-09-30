@@ -1,7 +1,9 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import tf from '@tensorflow/tfjs';
 import initSqlJs from 'sql.js';
+import { MongoClient } from 'mongodb';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,9 +11,10 @@ import { fileURLToPath } from 'node:url';
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '8mb' }));
 
 // ============ SAMPLE PROPERTIES ============
+const repairedSeedImageUrl = 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=900&q=80';
 const seedProperties = [
   {
     id: 1,
@@ -134,7 +137,7 @@ const propertyDetails = {
     yearBuilt: 2018,
     monthlyRent: 21000,
     description: 'A flexible semi-furnished apartment suited to professionals and small families.',
-    imageUrl: 'https://images.unsplash.com/photo-1493809842364-78817?auto=format&fit=crop&w=900&q=80'
+    imageUrl: repairedSeedImageUrl
   }
 };
 
@@ -144,15 +147,20 @@ const initialProperties = seedProperties.map(property => ({
 }));
 
 const databaseDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
-fs.mkdirSync(databaseDirectory, { recursive: true });
-const databasePath = path.join(databaseDirectory, 'properties.db');
+const databasePath = process.env.PROPERTY_DATABASE_PATH
+  ? path.resolve(process.env.PROPERTY_DATABASE_PATH)
+  : path.join(databaseDirectory, 'properties.db');
+fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 const insertPropertySql = `
   INSERT INTO properties (
     name, location, latitude, longitude, bhk, size, furnished, actualPrice,
-    amenities, propertyType, bathrooms, yearBuilt, monthlyRent, description, imageUrl
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    amenities, propertyType, bathrooms, yearBuilt, monthlyRent, description, imageUrl, ownerId
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 let db;
+let mongoClient;
+let mongoUsers;
+let mongoCounters;
 const sessions = new Map();
 
 function queryRows(sql, values = []) {
@@ -176,7 +184,7 @@ function insertProperty(property) {
     property.name, property.location, property.latitude, property.longitude, property.bhk,
     property.size, Number(property.furnished), property.actualPrice, JSON.stringify(property.amenities),
     property.propertyType, property.bathrooms, property.yearBuilt, property.monthlyRent,
-    property.description, property.imageUrl
+    property.description, property.imageUrl, property.ownerId ?? null
   ]);
 }
 
@@ -214,19 +222,85 @@ async function initializeDatabase() {
       createdAt TEXT NOT NULL
     )
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS favorites (
+      userId INTEGER NOT NULL,
+      propertyId INTEGER NOT NULL,
+      PRIMARY KEY (userId, propertyId)
+    )
+  `);
+  const propertyColumns = queryRows('PRAGMA table_info(properties)').map(column => column.name);
+  if (!propertyColumns.includes('ownerId')) {
+    db.run('ALTER TABLE properties ADD COLUMN ownerId INTEGER REFERENCES users(id)');
+  }
 
   if (queryRows('SELECT COUNT(*) AS count FROM properties')[0].count === 0) {
     initialProperties.forEach(insertProperty);
     saveDatabase();
   }
+
+  const staleSeedImageUrl = 'https://images.unsplash.com/photo-1493809842364-78817?auto=format&fit=crop&w=900&q=80';
+  if (queryRows('SELECT COUNT(*) AS count FROM properties WHERE imageUrl = ?', [staleSeedImageUrl])[0].count > 0) {
+    db.run('UPDATE properties SET imageUrl = ? WHERE imageUrl = ?', [repairedSeedImageUrl, staleSeedImageUrl]);
+    saveDatabase();
+  }
+}
+
+async function initializeMongoDatabase() {
+  if (!process.env.MONGODB_URI) return;
+  mongoClient = new MongoClient(process.env.MONGODB_URI);
+  await mongoClient.connect();
+  const mongoDatabase = mongoClient.db(process.env.MONGODB_DATABASE || 'property_finder');
+  mongoUsers = mongoDatabase.collection('users');
+  mongoCounters = mongoDatabase.collection('counters');
+  await mongoUsers.createIndex({ email: 1 }, { unique: true });
+
+  const localUsers = queryRows('SELECT * FROM users');
+  for (const row of localUsers) {
+    const favorites = queryRows(
+      'SELECT propertyId FROM favorites WHERE userId = ? ORDER BY propertyId',
+      [row.id]
+    ).map(favorite => Number(favorite.propertyId));
+    await mongoUsers.updateOne(
+      { _id: Number(row.id) },
+      {
+        $setOnInsert: {
+          name: row.name,
+          email: row.email,
+          passwordHash: row.passwordHash,
+          createdAt: row.createdAt,
+          favorites
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  const latestMongoUser = await mongoUsers.findOne({}, { sort: { _id: -1 }, projection: { _id: 1 } });
+  const latestLocalUser = localUsers.reduce((latest, row) => Math.max(latest, Number(row.id)), 0);
+  await mongoCounters.updateOne(
+    { _id: 'userId' },
+    { $max: { seq: Math.max(Number(latestMongoUser?._id || 0), latestLocalUser) } },
+    { upsert: true }
+  );
+  console.log(`Account data connected to MongoDB database "${mongoDatabase.databaseName}"`);
 }
 
 function propertyFromRow(row) {
-  return { ...row, furnished: Boolean(row.furnished), amenities: JSON.parse(row.amenities) };
+  return {
+    ...row,
+    ownerId: row.ownerId === null || row.ownerId === undefined ? null : Number(row.ownerId),
+    furnished: Boolean(row.furnished),
+    amenities: JSON.parse(row.amenities)
+  };
 }
 
 function getProperties() {
-  return queryRows('SELECT * FROM properties').map(propertyFromRow);
+  return queryRows(`
+    SELECT properties.*, users.name AS sellerName, users.email AS sellerEmail
+    FROM properties
+    LEFT JOIN users ON properties.ownerId = users.id
+  `).map(propertyFromRow);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -251,41 +325,183 @@ function createSession(user) {
 }
 
 function authenticatedUser(req) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const authorization = req.headers.authorization;
+  if (!authorization?.startsWith('Bearer ')) return null;
+  const token = authorization.slice(7);
   return token ? sessions.get(token) : null;
 }
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { name, email, password } = req.body;
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!String(name || '').trim() || !normalizedEmail || String(password || '').length < 6) {
     return res.status(400).json({ error: 'Name, valid email, and a password of at least 6 characters are required' });
   }
-  if (queryRows('SELECT id FROM users WHERE email = ?', [normalizedEmail]).length) {
-    return res.status(409).json({ error: 'An account already exists with this email' });
+  try {
+    if (mongoUsers) {
+      if (await mongoUsers.findOne({ email: normalizedEmail }, { projection: { _id: 1 } })) {
+        return res.status(409).json({ error: 'An account already exists with this email' });
+      }
+      const counter = await mongoCounters.findOneAndUpdate(
+        { _id: 'userId' },
+        { $inc: { seq: 1 } },
+        { upsert: true, returnDocument: 'after' }
+      );
+      const userRecord = {
+        _id: Number(counter.seq),
+        name: String(name).trim(),
+        email: normalizedEmail,
+        passwordHash: hashPassword(password),
+        createdAt: new Date().toISOString(),
+        favorites: []
+      };
+      await mongoUsers.insertOne(userRecord);
+      db.run('INSERT INTO users (id, name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?, ?)', [
+        userRecord._id, userRecord.name, userRecord.email, userRecord.passwordHash, userRecord.createdAt
+      ]);
+      saveDatabase();
+      const user = publicUser({ ...userRecord, id: userRecord._id });
+      return res.status(201).json({ user, token: createSession(user) });
+    }
+
+    if (queryRows('SELECT id FROM users WHERE email = ?', [normalizedEmail]).length) {
+      return res.status(409).json({ error: 'An account already exists with this email' });
+    }
+    db.run('INSERT INTO users (name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?)', [
+      String(name).trim(), normalizedEmail, hashPassword(password), new Date().toISOString()
+    ]);
+    saveDatabase();
+    const user = publicUser(queryRows('SELECT id, name, email FROM users WHERE email = ?', [normalizedEmail])[0]);
+    return res.status(201).json({ user, token: createSession(user) });
+  } catch (error) {
+    console.error('Error registering account:', error);
+    return res.status(500).json({ error: 'Unable to create your account' });
   }
-  db.run('INSERT INTO users (name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?)', [
-    String(name).trim(), normalizedEmail, hashPassword(password), new Date().toISOString()
-  ]);
-  saveDatabase();
-  const user = publicUser(queryRows('SELECT id, name, email FROM users WHERE email = ?', [normalizedEmail])[0]);
-  res.status(201).json({ user, token: createSession(user) });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
-  const row = queryRows('SELECT * FROM users WHERE email = ?', [normalizedEmail])[0];
-  if (!row || !String(req.body.password || '') || !verifyPassword(req.body.password, row.passwordHash)) {
-    return res.status(401).json({ error: 'Email or password is incorrect' });
+  try {
+    const row = mongoUsers
+      ? await mongoUsers.findOne({ email: normalizedEmail })
+      : queryRows('SELECT * FROM users WHERE email = ?', [normalizedEmail])[0];
+    if (!row || !String(req.body.password || '') || !verifyPassword(req.body.password, row.passwordHash)) {
+      return res.status(401).json({ error: 'Email or password is incorrect' });
+    }
+    const user = publicUser(mongoUsers ? { ...row, id: row._id } : row);
+    return res.json({ user, token: createSession(user) });
+  } catch (error) {
+    console.error('Error logging in:', error);
+    return res.status(500).json({ error: 'Unable to sign in right now' });
   }
-  const user = publicUser(row);
-  res.json({ user, token: createSession(user) });
 });
 
 app.get('/api/auth/me', (req, res) => {
   const user = authenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Session expired' });
   res.json({ user });
+});
+
+app.get('/api/account', async (req, res) => {
+  const sessionUser = authenticatedUser(req);
+  if (!sessionUser) return res.status(401).json({ error: 'Session expired' });
+  try {
+    if (mongoUsers) {
+      const account = await mongoUsers.findOne({ _id: sessionUser.id });
+      if (!account) return res.status(401).json({ error: 'Account not found' });
+      const user = publicUser({ ...account, id: account._id });
+      sessions.set(req.headers.authorization.slice(7), user);
+      return res.json({ user, favorites: account.favorites || [] });
+    }
+    const [userRow] = queryRows('SELECT id, name, email FROM users WHERE id = ?', [sessionUser.id]);
+    if (!userRow) return res.status(401).json({ error: 'Account not found' });
+    const user = publicUser(userRow);
+    sessions.set(req.headers.authorization.slice(7), user);
+    const favorites = queryRows('SELECT propertyId FROM favorites WHERE userId = ? ORDER BY propertyId', [user.id])
+      .map(row => Number(row.propertyId));
+    return res.json({ user, favorites });
+  } catch (error) {
+    console.error('Error loading account data:', error);
+    return res.status(500).json({ error: 'Unable to load your account data' });
+  }
+});
+
+app.put('/api/account/profile', async (req, res) => {
+  const sessionUser = authenticatedUser(req);
+  if (!sessionUser) return res.status(401).json({ error: 'Session expired' });
+  const name = String(req.body.name || '').trim();
+  if (!name || name.length > 80) {
+    return res.status(400).json({ error: 'Name must be between 1 and 80 characters' });
+  }
+  try {
+    if (mongoUsers) {
+      const result = await mongoUsers.updateOne({ _id: sessionUser.id }, { $set: { name } });
+      if (!result.matchedCount) return res.status(404).json({ error: 'Account not found' });
+    }
+    db.run('UPDATE users SET name = ? WHERE id = ?', [name, sessionUser.id]);
+    if (!mongoUsers && db.getRowsModified() !== 1) return res.status(404).json({ error: 'Account not found' });
+    saveDatabase();
+    const user = { ...sessionUser, name };
+    const token = req.headers.authorization.slice(7);
+    sessions.set(token, user);
+    res.json({ user });
+  } catch (error) {
+    console.error('Error updating account profile:', error);
+    res.status(500).json({ error: 'Unable to save profile changes' });
+  }
+});
+
+app.put('/api/account/favorites', async (req, res) => {
+  const user = authenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Session expired' });
+  const { propertyIds } = req.body;
+  if (!Array.isArray(propertyIds) || propertyIds.length > 500 ||
+      propertyIds.some(id => !Number.isSafeInteger(id) || id < 1)) {
+    return res.status(400).json({ error: 'Favorites must be a list of valid property IDs' });
+  }
+  const uniqueIds = [...new Set(propertyIds)];
+  if (uniqueIds.length) {
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const existingIds = queryRows(
+      `SELECT id FROM properties WHERE id IN (${placeholders})`,
+      uniqueIds
+    ).map(row => Number(row.id));
+    if (existingIds.length !== uniqueIds.length) {
+      return res.status(400).json({ error: 'One or more saved properties do not exist' });
+    }
+  }
+
+  if (mongoUsers) {
+    try {
+      const result = await mongoUsers.updateOne(
+        { _id: user.id },
+        { $set: { favorites: uniqueIds } }
+      );
+      if (!result.matchedCount) return res.status(404).json({ error: 'Account not found' });
+      return res.json({ favorites: uniqueIds });
+    } catch (error) {
+      console.error('Error saving account favorites to MongoDB:', error);
+      return res.status(500).json({ error: 'Unable to save your favorites' });
+    }
+  }
+
+  let transactionOpen = false;
+  try {
+    db.run('BEGIN TRANSACTION');
+    transactionOpen = true;
+    db.run('DELETE FROM favorites WHERE userId = ?', [user.id]);
+    uniqueIds.forEach(propertyId => {
+      db.run('INSERT INTO favorites (userId, propertyId) VALUES (?, ?)', [user.id, propertyId]);
+    });
+    db.run('COMMIT');
+    transactionOpen = false;
+    saveDatabase();
+    res.json({ favorites: uniqueIds });
+  } catch (error) {
+    if (transactionOpen) db.run('ROLLBACK');
+    console.error('Error saving account favorites:', error);
+    res.status(500).json({ error: 'Unable to save your favorites' });
+  }
 });
 
 // Location multipliers (for price prediction)
@@ -399,10 +615,21 @@ app.get('/api/properties', (req, res) => {
 
 // Get single property
 app.get('/api/properties/:id', (req, res) => {
-  const [row] = queryRows('SELECT * FROM properties WHERE id = ?', [Number(req.params.id)]);
+  const [row] = queryRows(`
+    SELECT properties.*, users.name AS sellerName, users.email AS sellerEmail
+    FROM properties
+    LEFT JOIN users ON properties.ownerId = users.id
+    WHERE properties.id = ?
+  `, [Number(req.params.id)]);
   const property = row && propertyFromRow(row);
   if (!property) return res.status(404).json({ error: 'Property not found' });
   res.json(property);
+});
+
+app.get('/api/my-properties', (req, res) => {
+  const user = authenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Sign in to view your listings' });
+  res.json(getProperties().filter(property => property.ownerId === user.id));
 });
 
 // Predict price
@@ -436,29 +663,52 @@ app.post('/api/train-model', async (req, res) => {
 
 // Add new property
 app.post('/api/properties', (req, res) => {
+  const user = authenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Sign in to list a property' });
+
   const {
-    name, location, latitude, longitude, bhk, size, furnished, actualPrice,
+    name, location, bhk, size, furnished, actualPrice,
     amenities, propertyType = 'Apartment', bathrooms = 1, yearBuilt = null,
     monthlyRent = null, description = '', imageUrl = ''
   } = req.body;
 
-  if (!name || !location || !Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude)) ||
-      !Number.isInteger(Number(bhk)) || Number(bhk) < 1 || !Number.isFinite(Number(size)) || Number(size) <= 0 ||
+  const nameValue = String(name || '').trim();
+  const locationValue = String(location || '').trim();
+  const imageValue = String(imageUrl || '');
+  const imageMatch = imageValue.match(/^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+=*)$/);
+  const imageSize = imageMatch ? Buffer.from(imageMatch[1], 'base64').length : 0;
+  const validImage = imageMatch && imageSize > 0 && imageSize <= 5 * 1024 * 1024;
+
+  if (!nameValue || nameValue.length > 120 || !locationValue || locationValue.length > 120 ||
+      !Number.isInteger(Number(bhk)) || Number(bhk) < 1 || Number(bhk) > 20 ||
+      !Number.isFinite(Number(size)) || Number(size) <= 0 ||
       typeof furnished !== 'boolean' || !Number.isFinite(Number(actualPrice)) || Number(actualPrice) <= 0 ||
-      !Array.isArray(amenities)) {
+      !Array.isArray(amenities) || amenities.length > 20 ||
+      !['Apartment', 'Villa', 'Penthouse'].includes(propertyType) ||
+      !Number.isInteger(Number(bathrooms)) || Number(bathrooms) < 1 || Number(bathrooms) > 30 ||
+      (yearBuilt !== null && (!Number.isInteger(Number(yearBuilt)) || Number(yearBuilt) < 1800 || Number(yearBuilt) > new Date().getFullYear() + 2)) ||
+      (description && String(description).length > 3000) || !validImage) {
     return res.status(400).json({ error: 'Invalid property data' });
   }
 
   const newProperty = {
-    name, location, latitude: Number(latitude), longitude: Number(longitude), bhk: Number(bhk),
+    name: nameValue, location: locationValue, latitude: 0, longitude: 0, bhk: Number(bhk),
     size: Number(size), furnished, actualPrice: Number(actualPrice), amenities,
     propertyType, bathrooms: Number(bathrooms), yearBuilt: yearBuilt === null ? null : Number(yearBuilt),
-    monthlyRent: monthlyRent === null ? null : Number(monthlyRent), description, imageUrl
+    monthlyRent: monthlyRent === null ? null : Number(monthlyRent), description: String(description).trim(),
+    imageUrl: imageValue, ownerId: user.id
   };
-  insertProperty(newProperty);
-  newProperty.id = queryRows('SELECT last_insert_rowid() AS id')[0].id;
-  saveDatabase();
-  res.status(201).json(newProperty);
+  try {
+    insertProperty(newProperty);
+    newProperty.id = queryRows('SELECT last_insert_rowid() AS id')[0].id;
+    newProperty.sellerName = user.name;
+    newProperty.sellerEmail = user.email;
+    saveDatabase();
+    res.status(201).json(newProperty);
+  } catch (error) {
+    console.error('Error saving property listing:', error);
+    res.status(500).json({ error: 'Unable to save this property listing' });
+  }
 });
 
 // Get locations
@@ -471,6 +721,7 @@ const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   await initializeDatabase();
+  await initializeMongoDatabase();
   const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
