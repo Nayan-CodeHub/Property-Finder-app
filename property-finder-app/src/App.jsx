@@ -259,6 +259,9 @@ export default function App() {
   const [filters, setFilters] = useState(defaultFilters);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+  const [naturalSearchText, setNaturalSearchText] = useState('');
+  const [recommendationCriteria, setRecommendationCriteria] = useState(null);
+  const recommendationQueryRef = useRef('');
   const [favorites, setFavorites] = useState([]);
   const [accountReady, setAccountReady] = useState(false);
   const [favoritesBusy, setFavoritesBusy] = useState(false);
@@ -352,6 +355,19 @@ export default function App() {
     setLoading(true);
     setLoadError('');
     try {
+      if (recommendationQueryRef.current) {
+        const response = await fetch(`${API_BASE}/recommendations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: recommendationQueryRef.current })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Unable to recommend homes.');
+        setProperties(result.results);
+        setRecommendationCriteria(result.criteria);
+        return;
+      }
+
       const query = new URLSearchParams();
       Object.entries(filtersRef.current).forEach(([key, value]) => {
         if (value !== '' && value !== 'all') query.append(key, value);
@@ -359,6 +375,7 @@ export default function App() {
       const response = await fetch(`${API_BASE}/properties?${query}`);
       if (!response.ok) throw new Error('Unable to load properties');
       setProperties(await response.json());
+      setRecommendationCriteria(null);
     } catch (error) {
       setLoadError('We could not load the homes right now.');
       console.error('Error fetching properties:', error);
@@ -366,6 +383,20 @@ export default function App() {
       setLoading(false);
     }
   }, []);
+
+  const searchByRequirements = event => {
+    event.preventDefault();
+    recommendationQueryRef.current = naturalSearchText.trim();
+    setRecommendationCriteria(null);
+    fetchProperties();
+  };
+
+  const applyFilters = () => {
+    recommendationQueryRef.current = '';
+    setRecommendationCriteria(null);
+    setNaturalSearchText('');
+    fetchProperties();
+  };
 
   useEffect(() => {
     if (activeView !== 'discover') return undefined;
@@ -473,6 +504,34 @@ export default function App() {
         <aside className="sidebar">
           <section className="filters-section">
             <h3>🔍 Search Properties</h3>
+            <form className="natural-search-form" onSubmit={searchByRequirements}>
+              <label htmlFor="natural-property-search">Describe your ideal home</label>
+              <textarea
+                id="natural-property-search"
+                rows="3"
+                maxLength="500"
+                value={naturalSearchText}
+                onChange={event => setNaturalSearchText(event.target.value)}
+                placeholder="Try: 2 BHK furnished apartment under ₹50 lakh in Downtown"
+              />
+              <button className="btn btn-primary" type="submit" disabled={loading || !naturalSearchText.trim()}>
+                {loading && recommendationQueryRef.current ? 'Finding matches...' : 'Find my matches'}
+              </button>
+              {recommendationCriteria && <div className="recommendation-note">
+                <strong>{recommendationCriteria.hasPreferences ? 'Match scores are based on these details:' : 'No specific filters detected; ranked matches use the listing details.'}</strong>
+                <span>{[
+                  recommendationCriteria.bhk && `${recommendationCriteria.bhk} BHK`,
+                  recommendationCriteria.minPrice && `from ₹${(recommendationCriteria.minPrice / 100000).toLocaleString()} lakh`,
+                  recommendationCriteria.maxPrice && `up to ₹${(recommendationCriteria.maxPrice / 100000).toLocaleString()} lakh`,
+                  recommendationCriteria.location,
+                  recommendationCriteria.propertyType,
+                  recommendationCriteria.furnished === true && 'Furnished',
+                  recommendationCriteria.furnished === false && 'Unfurnished',
+                  ...recommendationCriteria.amenities,
+                  ...recommendationCriteria.keywords
+                ].filter(Boolean).join(' · ') || 'No preferences detected'}</span>
+              </div>}
+            </form>
             <div className="filter-grid">
               <div className="filter-group"><label>BHK</label><select value={filters.bhk} onChange={event => updateFilter('bhk', event.target.value)}><option value="all">Any</option>{[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>{value} BHK</option>)}</select></div>
               <div className="filter-group"><label>Property type</label><select value={filters.propertyType} onChange={event => updateFilter('propertyType', event.target.value)}><option value="all">Any type</option><option value="Apartment">Apartment</option><option value="Villa">Villa</option><option value="Penthouse">Penthouse</option></select></div>
@@ -481,7 +540,7 @@ export default function App() {
             <div className="filter-grid"><div className="filter-group"><label>Minimum area</label><input type="number" placeholder="sq ft" value={filters.minSize} onChange={event => updateFilter('minSize', event.target.value)} /></div><div className="filter-group"><label>Location</label><select value={filters.location} onChange={event => updateFilter('location', event.target.value)}><option value="all">All locations</option>{locations.map(location => <option key={location} value={location}>{location}</option>)}</select></div></div>
             <div className="filter-grid"><div className="filter-group"><label>Amenity</label><select value={filters.amenity} onChange={event => updateFilter('amenity', event.target.value)}><option value="all">Any amenity</option><option value="Parking">Parking</option><option value="Gym">Gym</option><option value="Pool">Pool</option><option value="Security">Security</option><option value="Garden">Garden</option></select></div><div className="filter-group"><label>Furnished</label><select value={filters.furnished} onChange={event => updateFilter('furnished', event.target.value)}><option value="all">Any</option><option value="true">Furnished</option><option value="false">Unfurnished</option></select></div></div>
             <div className="filter-group"><label>Sort by</label><select value={filters.sort} onChange={event => updateFilter('sort', event.target.value)}><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="size-high">Largest area first</option></select></div>
-            <button className="btn btn-primary" onClick={fetchProperties} disabled={loading}>{loading ? 'Searching...' : 'Apply filters'}</button>
+            <button className="btn btn-primary" onClick={applyFilters} disabled={loading}>{loading ? 'Searching...' : 'Apply filters'}</button>
           </section>
           <section className="predictor-section">
             <h3>💰 Price Predictor</h3>
@@ -493,7 +552,7 @@ export default function App() {
           </section>
         </aside>
         <main className="main">
-          <div className="properties-list full-results"><div className="list-heading"><div><span className="section-kicker">Curated for you</span><h3>{properties.length ? 'Recommended homes' : 'No homes found'}</h3></div><div className="list-actions"><span>{favorites.length} saved</span></div></div>{loadError ? <div className="empty-state"><h3>{loadError}</h3><button className="btn btn-secondary" onClick={fetchProperties}>Try again</button></div> : <div className="cards-grid">{loading ? [1, 2, 3].map(index => <div className="property-skeleton" key={index} />) : properties.map(property => <article className={`property-card ${selectedProperty?.id === property.id ? 'active' : ''}`} key={property.id} onClick={() => setSelectedProperty(property)}><div className="card-image-wrap"><img className="card-image" src={property.imageUrl} alt={property.name} /><button className={`favorite-button ${favorites.includes(property.id) ? 'saved' : ''}`} disabled={!accountReady || favoritesBusy} onClick={event => { event.stopPropagation(); toggleFavorite(property.id); }} aria-label="Save property">{favorites.includes(property.id) ? '♥' : '♡'}</button></div><div className="card-content"><div className="card-header"><h4>{property.name}</h4><span className="price">{formatPrice(property.actualPrice)}</span></div><p className="property-meta">{property.propertyType} · {property.bhk} BHK · {property.bathrooms} bath · {property.size} sq ft</p><p className="property-location">📍 {property.location}</p><div className="amenities">{property.amenities.slice(0, 4).map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div><button className="btn btn-small" onClick={event => { event.stopPropagation(); setSelectedProperty(property); }}>View details →</button></div></article>)}</div>}{!loading && !loadError && properties.length === 0 && <div className="empty-state"><h3>No properties match these filters</h3><p>Try widening your budget or removing an amenity filter.</p></div>}</div>
+          <div className="properties-list full-results"><div className="list-heading"><div><span className="section-kicker">{recommendationCriteria ? 'Smart match results' : 'Curated for you'}</span><h3>{properties.length ? (recommendationCriteria ? 'Homes ranked for your needs' : 'Recommended homes') : 'No homes found'}</h3></div><div className="list-actions"><span>{favorites.length} saved</span></div></div>{loadError ? <div className="empty-state"><h3>{loadError}</h3><button className="btn btn-secondary" onClick={fetchProperties}>Try again</button></div> : <div className="cards-grid">{loading ? [1, 2, 3].map(index => <div className="property-skeleton" key={index} />) : properties.map(property => <article className={`property-card ${selectedProperty?.id === property.id ? 'active' : ''}`} key={property.id} onClick={() => setSelectedProperty(property)}><div className="card-image-wrap"><img className="card-image" src={property.imageUrl} alt={property.name} /><button className={`favorite-button ${favorites.includes(property.id) ? 'saved' : ''}`} disabled={!accountReady || favoritesBusy} onClick={event => { event.stopPropagation(); toggleFavorite(property.id); }} aria-label="Save property">{favorites.includes(property.id) ? '♥' : '♡'}</button></div><div className="card-content">{recommendationCriteria && <div className="match-score"><strong>{property.matchScore}% match</strong><span>{property.matchReasons?.slice(0, 3).join(' · ') || 'Based on your search'}</span></div>}<div className="card-header"><h4>{property.name}</h4><span className="price">{formatPrice(property.actualPrice)}</span></div><p className="property-meta">{property.propertyType} · {property.bhk} BHK · {property.bathrooms} bath · {property.size} sq ft</p><p className="property-location">📍 {property.location}</p><div className="amenities">{property.amenities.slice(0, 4).map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div><button className="btn btn-small" onClick={event => { event.stopPropagation(); setSelectedProperty(property); }}>View details →</button></div></article>)}</div>}{!loading && !loadError && properties.length === 0 && <div className="empty-state"><h3>No properties match these filters</h3><p>Try widening your budget or removing an amenity filter.</p></div>}</div>
         </main>
       </div>}
       {selectedProperty && <div className="modal-backdrop" onClick={() => setSelectedProperty(null)}><section className="property-modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={() => setSelectedProperty(null)} aria-label="Close details">×</button><img className="modal-image" src={selectedProperty.imageUrl} alt={selectedProperty.name} /><div className="modal-content"><div className="modal-title"><div><span className="eyebrow">{selectedProperty.propertyType} · {selectedProperty.location}</span><h2>{selectedProperty.name}</h2></div><button className={`favorite-button large ${favorites.includes(selectedProperty.id) ? 'saved' : ''}`} disabled={!accountReady || favoritesBusy} onClick={() => toggleFavorite(selectedProperty.id)}>{favorites.includes(selectedProperty.id) ? '♥' : '♡'}</button></div><strong className="modal-price">{formatPrice(selectedProperty.actualPrice)}</strong><p className="modal-description">{selectedProperty.description}</p><div className="detail-grid"><span><b>{selectedProperty.bhk}</b> bedrooms</span><span><b>{selectedProperty.bathrooms}</b> bathrooms</span><span><b>{selectedProperty.size}</b> sq ft</span><span><b>{selectedProperty.yearBuilt || 'Not specified'}</b> built</span><span><b>{selectedProperty.monthlyRent ? formatPrice(selectedProperty.monthlyRent) : 'Not specified'}</b> estimated rent</span><span><b>{formatPrice(Math.round(selectedProperty.actualPrice / selectedProperty.size))}</b> per sq ft</span></div><div className="amenities modal-amenities">{selectedProperty.amenities.map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div>{selectedProperty.sellerEmail ? <div className="seller-contact"><span>Listed by {selectedProperty.sellerName}</span><a className="btn btn-primary" href={`mailto:${selectedProperty.sellerEmail}?subject=${encodeURIComponent(`Property enquiry: ${selectedProperty.name}`)}`}>Email seller</a></div> : <p className="seller-contact">Seller contact details are not available for this listing.</p>}</div></section></div>}

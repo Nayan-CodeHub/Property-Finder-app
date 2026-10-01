@@ -8,6 +8,8 @@ An intelligent property search and discovery platform with **ML-based price pred
 - Filter properties by **BHK (Bedrooms)**, **Price**, **Location**, and **Furnishing Status**
 - Real-time search results with instant filtering
 - Support for multiple locations with dynamic location loading
+- Describe needs in plain English, e.g. “2 BHK furnished apartment under ₹50 lakh in Downtown”
+- Listings are ranked with a match percentage and visible reasons based on the details provided
 
 ### 🏡 Buy and Sell Properties
 - Signed-in users can publish a property listing with its details, amenities, asking price, and a photo
@@ -144,6 +146,18 @@ property-finder-app/
 ```
 
 ## 🔌 API Endpoints
+
+### POST `/api/recommendations`
+Rank current listings against a plain-language property request. The recommendation score is explainable matching against fields in each listing; it is not a guarantee of suitability or a generated AI response.
+
+**Request Body:**
+```json
+{
+  "query": "2 BHK furnished apartment under ₹50 lakh in Downtown"
+}
+```
+
+The response includes recognized criteria and listings ranked by `matchScore` (0–100), with `matchReasons` for the score.
 
 ### GET `/api/properties`
 Get all properties with optional filters.
