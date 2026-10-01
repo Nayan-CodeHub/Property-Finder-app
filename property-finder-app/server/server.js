@@ -589,6 +589,172 @@ function mlBasedPrice(bhk, size, location, furnished) {
   return price;
 }
 
+function parseMoneyAmount(amountText, unitText = '') {
+  const amount = Number(String(amountText).replace(/,/g, ''));
+  const unit = unitText.toLowerCase();
+  if (!Number.isFinite(amount)) return null;
+  if (/crore|^cr$/.test(unit)) return amount * 10000000;
+  if (/lakh|lac/.test(unit)) return amount * 100000;
+  if (/million|^mn$/.test(unit)) return amount * 1000000;
+  if (/thousand|^k$/.test(unit)) return amount * 1000;
+  return amount;
+}
+
+function interpretPropertyQuery(query, availableLocations) {
+  const normalized = query.toLowerCase().replace(/,/g, '');
+  const criteria = {};
+  const betweenRange = normalized.match(
+    /\bbetween\s+(?:₹\s*)?(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|million|mn|thousand|k)?\s+(?:and|to|-)\s*(?:₹\s*)?(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|million|mn|thousand|k)?\b/
+  );
+  const possibleRange = betweenRange || normalized.match(
+    /(?:between\s+)?(?:₹\s*)?(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|lakh|lac|million|mn|thousand|k)?\s*(?:-|to|and)\s*(?:₹\s*)?(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|lakh|lac|million|mn|thousand|k)?\b/
+  );
+  const rangePrefix = possibleRange
+    ? normalized.slice(Math.max(0, possibleRange.index - 20), possibleRange.index)
+    : '';
+  const range = possibleRange &&
+    (possibleRange[2] || possibleRange[4] || possibleRange[0].includes('₹') ||
+      /\b(?:between|budget|price)\b/.test(rangePrefix))
+    ? possibleRange
+    : null;
+
+  if (range) {
+    if (betweenRange) {
+      const minUnit = betweenRange[2] || betweenRange[4] || '';
+      const maxUnit = betweenRange[4] || betweenRange[2] || '';
+      criteria.minPrice = parseMoneyAmount(betweenRange[1], minUnit);
+      criteria.maxPrice = parseMoneyAmount(betweenRange[3], maxUnit);
+    } else {
+      const unit = range[4] || range[2] || '';
+      criteria.minPrice = parseMoneyAmount(range[1], unit);
+      criteria.maxPrice = parseMoneyAmount(range[3], unit);
+    }
+  } else {
+    const amounts = [...normalized.matchAll(
+      /(?:₹\s*)?(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|lakh|lac|million|mn|thousand|k)?\b/g
+    )];
+    const moneyAmount = amounts.find(match =>
+      match[2] || normalized.slice(Math.max(0, match.index - 2), match.index).includes('₹')
+    ) || amounts.find(match => {
+      const beforeAmount = normalized.slice(Math.max(0, match.index - 32), match.index);
+      const afterAmount = normalized.slice(match.index + match[0].length);
+      return !/^\s*(?:bhk|bed(?:room)?s?)\b/.test(afterAmount) &&
+        /\b(?:budget|price|under|below|above|over|less than|up to|between|within|maximum|minimum)\b/.test(beforeAmount);
+    });
+    if (moneyAmount) {
+      const amount = parseMoneyAmount(moneyAmount[1], moneyAmount[2] || '');
+      const beforeAmount = normalized.slice(Math.max(0, moneyAmount.index - 32), moneyAmount.index);
+      const afterAmount = normalized.slice(moneyAmount.index + moneyAmount[0].length);
+      if (/\b(?:above|over|minimum|at least|more than)\b/.test(beforeAmount)) {
+        criteria.minPrice = amount;
+      } else if (/\b(?:between|from)\b/.test(beforeAmount) && !criteria.maxPrice) {
+        criteria.minPrice = amount;
+      } else if (/\b(?:to|and)\b/.test(afterAmount) && !criteria.maxPrice) {
+        criteria.minPrice = amount;
+      } else {
+        criteria.maxPrice = amount;
+      }
+    }
+  }
+
+  const bhk = normalized.match(/\b(\d+)\s*(?:bhk|bed(?:room)?s?)\b/);
+  if (bhk) criteria.bhk = Number(bhk[1]);
+
+  if (/\bunfurnished\b|\bnot furnished\b/.test(normalized)) {
+    criteria.furnished = false;
+  } else if (/\bfurnished\b/.test(normalized)) {
+    criteria.furnished = true;
+  }
+
+  if (/\b(?:apartment|flat)\b/.test(normalized)) criteria.propertyType = 'Apartment';
+  else if (/\bvilla\b/.test(normalized)) criteria.propertyType = 'Villa';
+  else if (/\bpenthouse\b/.test(normalized)) criteria.propertyType = 'Penthouse';
+
+  const matchedLocation = [...availableLocations]
+    .sort((a, b) => b.length - a.length)
+    .find(location => normalized.includes(location.toLowerCase()));
+  if (matchedLocation) criteria.location = matchedLocation;
+
+  const amenities = ['Parking', 'Gym', 'Pool', 'Security', 'Garden', 'Concierge'];
+  criteria.amenities = amenities.filter(amenity => normalized.includes(amenity.toLowerCase()));
+  criteria.keywords = normalized
+    .replace(/\b\d+\s*(?:bhk|bed(?:room)?s?)\b/g, ' ')
+    .replace(/\b(?:show|find|search|recommend|me|a|an|the|for|with|near|in|at|to|please|home|homes|house|houses|property|properties|i|want|need|mujhe|chahiye|dikhao|mein|aur|ke|liye)\b/g, ' ')
+    .replace(/\b(?:under|below|above|over|maximum|minimum|budget|price|up|upto|less|than|more|between|from|within|around|nearby|bhk|bed|beds|bedroom|bedrooms|furnished|unfurnished|apartment|flat|villa|penthouse|lakh|lakhs|lac|lacs|crore|crores|cr|million|mn|thousand|k|rupee|rupees)\b/g, ' ')
+    .replace(/₹|[0-9.]+/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2 && !availableLocations.some(location => location.toLowerCase() === word));
+
+  return criteria;
+}
+
+function recommendProperties(query, availableProperties) {
+  const criteria = interpretPropertyQuery(query, availableProperties.map(property => property.location));
+  const ranked = availableProperties.map(property => {
+    const dimensions = [];
+    const reasons = [];
+    const addDimension = (weight, matched, reason, miss) => {
+      dimensions.push({ weight, score: matched });
+      if (matched >= 0.8) reasons.push(reason);
+      else if (miss) reasons.push(miss);
+    };
+
+    if (criteria.bhk) {
+      addDimension(25, property.bhk === criteria.bhk ? 1 : 0.25, `${criteria.bhk} BHK`, `${property.bhk} BHK`);
+    }
+    if (criteria.minPrice || criteria.maxPrice) {
+      const inRange = (!criteria.minPrice || property.actualPrice >= criteria.minPrice) &&
+        (!criteria.maxPrice || property.actualPrice <= criteria.maxPrice);
+      let score = inRange ? 1 : 0.25;
+      if (!inRange && criteria.maxPrice && property.actualPrice > criteria.maxPrice) {
+        score = Math.max(0.1, criteria.maxPrice / property.actualPrice);
+      } else if (!inRange && criteria.minPrice && property.actualPrice < criteria.minPrice) {
+        score = Math.max(0.1, property.actualPrice / criteria.minPrice);
+      }
+      const budgetLabel = criteria.minPrice && criteria.maxPrice
+        ? `₹${(criteria.minPrice / 100000).toLocaleString()}–${(criteria.maxPrice / 100000).toLocaleString()} lakh`
+        : `${criteria.minPrice ? 'At least' : 'Up to'} ₹${((criteria.minPrice || criteria.maxPrice) / 100000).toLocaleString()} lakh`;
+      addDimension(30, score, `Within budget (${budgetLabel})`, `Price outside budget (${budgetLabel})`);
+    }
+    if (criteria.furnished !== undefined) {
+      addDimension(10, property.furnished === criteria.furnished ? 1 : 0, criteria.furnished ? 'Furnished' : 'Unfurnished', 'Furnishing preference differs');
+    }
+    if (criteria.location) {
+      addDimension(15, property.location === criteria.location ? 1 : 0, `In ${criteria.location}`, `Different location (${property.location})`);
+    }
+    if (criteria.propertyType) {
+      addDimension(10, property.propertyType === criteria.propertyType ? 1 : 0, criteria.propertyType, `Different type (${property.propertyType})`);
+    }
+    for (const amenity of criteria.amenities) {
+      const matched = property.amenities.some(item => item.toLowerCase() === amenity.toLowerCase());
+      addDimension(5, matched ? 1 : 0, amenity, `No ${amenity.toLowerCase()} listed`);
+    }
+    if (criteria.keywords.length) {
+      const searchable = `${property.name} ${property.location} ${property.description} ${property.amenities.join(' ')}`.toLowerCase();
+      const matchingKeywords = criteria.keywords.filter(keyword => searchable.includes(keyword));
+      const score = matchingKeywords.length / criteria.keywords.length;
+      addDimension(10, score, `${matchingKeywords.length}/${criteria.keywords.length} search terms`, `${matchingKeywords.length}/${criteria.keywords.length} search terms`);
+    }
+
+    const totalWeight = dimensions.reduce((sum, dimension) => sum + dimension.weight, 0);
+    const matchScore = totalWeight
+      ? Math.round(dimensions.reduce((sum, dimension) => sum + dimension.score * dimension.weight, 0) / totalWeight * 100)
+      : 100;
+    return { ...property, matchScore, matchReasons: reasons };
+  });
+
+  return {
+    criteria: {
+      ...criteria,
+      hasPreferences: Boolean(
+        criteria.bhk || criteria.minPrice || criteria.maxPrice || criteria.furnished !== undefined ||
+        criteria.location || criteria.propertyType || criteria.amenities.length || criteria.keywords.length
+      )
+    },
+    results: ranked.sort((a, b) => b.matchScore - a.matchScore || a.actualPrice - b.actualPrice)
+  };
+}
+
 // ============ API ENDPOINTS ============
 
 // Get all properties with filters
@@ -611,6 +777,15 @@ app.get('/api/properties', (req, res) => {
   if (sort === 'size-high') filtered = [...filtered].sort((a, b) => b.size - a.size);
 
   res.json(filtered);
+});
+
+app.post('/api/recommendations', (req, res) => {
+  const query = String(req.body.query || '').trim();
+  if (!query || query.length > 500) {
+    return res.status(400).json({ error: 'Enter a search request up to 500 characters long' });
+  }
+  const availableProperties = getProperties();
+  res.json({ query, ...recommendProperties(query, availableProperties) });
 });
 
 // Get single property
