@@ -496,7 +496,14 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-brand"><span className="brand-mark">⌂</span><div><h1>Havenly</h1><p>Your thoughtful property search</p></div></div>
-        <nav className="dashboard-nav"><button className={activeView === 'discover' ? 'active' : ''} onClick={() => setActiveView('discover')}>Discover</button><button className={activeView === 'saved' ? 'active' : ''} onClick={() => setActiveView('saved')}>Saved <span>{favorites.length}</span></button><button className={activeView === 'sell' ? 'active' : ''} onClick={() => setActiveView('sell')}>Sell</button><button className={activeView === 'my-listings' ? 'active' : ''} onClick={() => setActiveView('my-listings')}>My listings</button><button className={activeView === 'profile' ? 'active' : ''} onClick={() => setActiveView('profile')}>Profile</button><button className={activeView === 'settings' ? 'active' : ''} onClick={() => setActiveView('settings')}>Settings</button></nav>
+        <nav className="dashboard-nav" aria-label="Main navigation">
+          <button className={activeView === 'discover' ? 'active' : ''} onClick={() => setActiveView('discover')}><span className="nav-icon" aria-hidden="true">⌂</span><span className="nav-label">Discover</span></button>
+          <button className={activeView === 'saved' ? 'active' : ''} onClick={() => setActiveView('saved')}><span className="nav-icon" aria-hidden="true">♡</span><span className="nav-label">Saved{favorites.length > 0 && <span>{favorites.length}</span>}</span></button>
+          <button className={activeView === 'sell' ? 'active' : ''} onClick={() => setActiveView('sell')}><span className="nav-icon" aria-hidden="true">＋</span><span className="nav-label">Sell</span></button>
+          <button className={activeView === 'my-listings' ? 'active' : ''} onClick={() => setActiveView('my-listings')}><span className="nav-icon" aria-hidden="true">▤</span><span className="nav-label">Listings</span></button>
+          <button className={activeView === 'profile' ? 'active' : ''} onClick={() => setActiveView('profile')}><span className="nav-icon" aria-hidden="true">◉</span><span className="nav-label">Profile</span></button>
+          <button className={activeView === 'settings' ? 'active' : ''} onClick={() => setActiveView('settings')}><span className="nav-icon" aria-hidden="true">⚙</span><span className="nav-label">Settings</span></button>
+        </nav>
         <div className="header-actions"><span className="badge">{modelTrained ? '● Market ready' : '○ Preparing market'}</span><button className="header-avatar" onClick={() => setActiveView('profile')}>{session.name?.charAt(0).toUpperCase()}</button></div>
       </header>
       {accountError && <div className="account-sync-error" role="alert"><span>{accountError}</span><button onClick={() => setAccountReload(value => value + 1)}>Retry</button></div>}

@@ -95,13 +95,47 @@ This installs the frontend, backend, SQLite, and MongoDB dependencies. The local
 4. Keep `MONGODB_DATABASE=property_finder` or set it to your preferred database name.
 5. Restart the backend with `npm run server` (or restart `npm run dev`).
 
-Do not share or commit `.env`; it is ignored by Git. When `MONGODB_URI` is set, account records (including password hashes), profile names, and saved home IDs are stored in MongoDB. Existing local accounts and saved homes are copied to MongoDB the first time the backend connects. Property listings and uploaded listing images continue to use the SQLite database at `server/data/properties.db`.
+Do not share or commit `.env`; it is ignored by Git. When `MONGODB_URI` is set, account records (including password hashes), profile names, and saved home IDs are stored in MongoDB. Existing local accounts and saved homes are copied to MongoDB the first time the backend connects. Locally, property listings and uploaded listing images use the SQLite database at
+`server/data/properties.db`. On the free Render setup below, SQLite snapshots are
+persisted to MongoDB GridFS because Render's filesystem is temporary.
 
 Without `MONGODB_URI`, the app retains its SQLite-only account storage for local development.
 
-### Step 3: Start Both Servers
+### Deploy the backend to Render
+
+The repository includes a free Render Blueprint for the Node.js backend. It uses
+`property-finder-app` as the service root. Free Render filesystems are temporary, so
+the backend requires MongoDB and stores SQLite application snapshots in MongoDB
+GridFS; listings, uploaded images, and the local SQL state survive service restarts.
+Create a free MongoDB Atlas database and configure `MONGODB_URI` in Render before
+deploying. Do not set `PORT` manually; Render provides it at runtime.
+
+1. Create a free MongoDB Atlas cluster and database user. Allow Render connections
+   in Atlas Network Access (for example, `0.0.0.0/0`), and keep the database password
+   private.
+2. Push the repository to GitHub without committing `.env`.
+3. In Render, create a Blueprint and select this repository. In the service's
+   Environment settings, set `MONGODB_URI` to the Atlas connection string and save.
+   `MONGODB_DATABASE` defaults to `property_finder`.
+4. After deployment, check the assigned service URL ending in
+   `/api/locations` for a JSON response. The free Render service can spin down when
+   idle, so the first request after inactivity may take about a minute.
+5. Build the Android app with the deployed backend URL:
+
+   ```powershell
+   $env:VITE_API_URL = "https://property-finder-api.onrender.com/api"
+   npm run mobile:build
+   ```
+
+   Replace the URL if Render assigns a different service hostname. Install the new
+   APK after the build; an already-installed APK keeps using its previous API URL.
+   Free Render instances have usage limits and are intended for testing/hobby use.
+
+### Step 3: Start the App
 ```bash
-# In development mode (starts both server and client)
+# Either command starts both the backend and frontend
+npm run client
+# or
 npm run dev
 ```
 

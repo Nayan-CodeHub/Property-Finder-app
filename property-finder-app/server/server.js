@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import tf from '@tensorflow/tfjs';
 import initSqlJs from 'sql.js';
-import { MongoClient } from 'mongodb';
+import { GridFSBucket, MongoClient } from 'mongodb';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -158,9 +158,15 @@ const insertPropertySql = `
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 let db;
+let SqlDatabase;
 let mongoClient;
+let mongoDatabase;
 let mongoUsers;
 let mongoCounters;
+let mongoSessions;
+let mongoSnapshotBucket;
+let mongoSnapshotState;
+let mongoSnapshotQueue = Promise.resolve();
 const sessions = new Map();
 
 function queryRows(sql, values = []) {
@@ -176,7 +182,38 @@ function queryRows(sql, values = []) {
 }
 
 function saveDatabase() {
-  fs.writeFileSync(databasePath, Buffer.from(db.export()));
+  const snapshot = Buffer.from(db.export());
+  fs.writeFileSync(databasePath, snapshot);
+  if (!mongoSnapshotBucket || !mongoSnapshotState) return Promise.resolve();
+
+  const savePromise = mongoSnapshotQueue.then(async () => {
+    const previousSnapshotId = mongoSnapshotState.fileId;
+    const uploadStream = mongoSnapshotBucket.openUploadStream('sqlite-state', {
+      metadata: { updatedAt: new Date() }
+    });
+    const fileId = await new Promise((resolve, reject) => {
+      uploadStream.once('error', reject);
+      uploadStream.once('finish', () => resolve(uploadStream.id));
+      uploadStream.end(snapshot);
+    });
+    await mongoSnapshotState.updateOne(
+      { _id: 'sqlite' },
+      { $set: { fileId, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    mongoSnapshotState.fileId = fileId;
+    if (previousSnapshotId) {
+      try {
+        await mongoSnapshotBucket.delete(previousSnapshotId);
+      } catch (error) {
+        console.error('Unable to remove the previous SQLite snapshot from MongoDB:', error);
+      }
+    }
+  });
+  mongoSnapshotQueue = savePromise.catch(error => {
+    console.error('Unable to persist SQLite data to MongoDB:', error);
+  });
+  return savePromise;
 }
 
 function insertProperty(property) {
@@ -190,6 +227,7 @@ function insertProperty(property) {
 
 async function initializeDatabase() {
   const SQL = await initSqlJs();
+  SqlDatabase = SQL.Database;
   db = fs.existsSync(databasePath)
     ? new SQL.Database(fs.readFileSync(databasePath))
     : new SQL.Database();
@@ -236,13 +274,13 @@ async function initializeDatabase() {
 
   if (queryRows('SELECT COUNT(*) AS count FROM properties')[0].count === 0) {
     initialProperties.forEach(insertProperty);
-    saveDatabase();
+    await saveDatabase();
   }
 
   const staleSeedImageUrl = 'https://images.unsplash.com/photo-1493809842364-78817?auto=format&fit=crop&w=900&q=80';
   if (queryRows('SELECT COUNT(*) AS count FROM properties WHERE imageUrl = ?', [staleSeedImageUrl])[0].count > 0) {
     db.run('UPDATE properties SET imageUrl = ? WHERE imageUrl = ?', [repairedSeedImageUrl, staleSeedImageUrl]);
-    saveDatabase();
+    await saveDatabase();
   }
 }
 
@@ -250,10 +288,26 @@ async function initializeMongoDatabase() {
   if (!process.env.MONGODB_URI) return;
   mongoClient = new MongoClient(process.env.MONGODB_URI);
   await mongoClient.connect();
-  const mongoDatabase = mongoClient.db(process.env.MONGODB_DATABASE || 'property_finder');
+  mongoDatabase = mongoClient.db(process.env.MONGODB_DATABASE || 'property_finder');
   mongoUsers = mongoDatabase.collection('users');
   mongoCounters = mongoDatabase.collection('counters');
+  mongoSessions = mongoDatabase.collection('sessions');
+  mongoSnapshotBucket = new GridFSBucket(mongoDatabase, { bucketName: 'sqlite_snapshots' });
+  mongoSnapshotState = mongoDatabase.collection('app_state');
   await mongoUsers.createIndex({ email: 1 }, { unique: true });
+  await mongoSessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+  const currentSnapshot = await mongoSnapshotState.findOne({ _id: 'sqlite' });
+  mongoSnapshotState.fileId = currentSnapshot?.fileId;
+  if (currentSnapshot?.fileId) {
+    const chunks = [];
+    for await (const chunk of mongoSnapshotBucket.openDownloadStream(currentSnapshot.fileId)) {
+      chunks.push(Buffer.from(chunk));
+    }
+    db.close();
+    db = new SqlDatabase(Buffer.concat(chunks));
+    console.log('Loaded persistent application data from MongoDB');
+  }
 
   const localUsers = queryRows('SELECT * FROM users');
   for (const row of localUsers) {
@@ -283,6 +337,21 @@ async function initializeMongoDatabase() {
     { $max: { seq: Math.max(Number(latestMongoUser?._id || 0), latestLocalUser) } },
     { upsert: true }
   );
+
+  for await (const account of mongoUsers.find({}, {
+    projection: { _id: 1, name: 1, email: 1, passwordHash: 1, createdAt: 1, favorites: 1 }
+  })) {
+    db.run(
+      'INSERT OR IGNORE INTO users (id, name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?, ?)',
+      [Number(account._id), account.name, account.email, account.passwordHash, account.createdAt]
+    );
+    for (const propertyId of account.favorites || []) {
+      db.run('INSERT OR IGNORE INTO favorites (userId, propertyId) VALUES (?, ?)', [
+        Number(account._id), Number(propertyId)
+      ]);
+    }
+  }
+  await saveDatabase();
   console.log(`Account data connected to MongoDB database "${mongoDatabase.databaseName}"`);
 }
 
@@ -318,16 +387,27 @@ function publicUser(row) {
   return { id: row.id, name: row.name, email: row.email };
 }
 
-function createSession(user) {
+async function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, user);
+  if (mongoSessions) {
+    await mongoSessions.insertOne({
+      _id: token,
+      user,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    });
+  }
   return token;
 }
 
-function authenticatedUser(req) {
+async function authenticatedUser(req) {
   const authorization = req.headers.authorization;
   if (!authorization?.startsWith('Bearer ')) return null;
   const token = authorization.slice(7);
+  if (mongoSessions && token) {
+    const session = await mongoSessions.findOne({ _id: token, expiresAt: { $gt: new Date() } });
+    if (session) return session.user;
+  }
   return token ? sessions.get(token) : null;
 }
 
@@ -359,9 +439,9 @@ app.post('/api/auth/register', async (req, res) => {
       db.run('INSERT INTO users (id, name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?, ?)', [
         userRecord._id, userRecord.name, userRecord.email, userRecord.passwordHash, userRecord.createdAt
       ]);
-      saveDatabase();
+      await saveDatabase();
       const user = publicUser({ ...userRecord, id: userRecord._id });
-      return res.status(201).json({ user, token: createSession(user) });
+      return res.status(201).json({ user, token: await createSession(user) });
     }
 
     if (queryRows('SELECT id FROM users WHERE email = ?', [normalizedEmail]).length) {
@@ -370,9 +450,9 @@ app.post('/api/auth/register', async (req, res) => {
     db.run('INSERT INTO users (name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?)', [
       String(name).trim(), normalizedEmail, hashPassword(password), new Date().toISOString()
     ]);
-    saveDatabase();
+    await saveDatabase();
     const user = publicUser(queryRows('SELECT id, name, email FROM users WHERE email = ?', [normalizedEmail])[0]);
-    return res.status(201).json({ user, token: createSession(user) });
+    return res.status(201).json({ user, token: await createSession(user) });
   } catch (error) {
     console.error('Error registering account:', error);
     return res.status(500).json({ error: 'Unable to create your account' });
@@ -389,21 +469,21 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Email or password is incorrect' });
     }
     const user = publicUser(mongoUsers ? { ...row, id: row._id } : row);
-    return res.json({ user, token: createSession(user) });
+    return res.json({ user, token: await createSession(user) });
   } catch (error) {
     console.error('Error logging in:', error);
     return res.status(500).json({ error: 'Unable to sign in right now' });
   }
 });
 
-app.get('/api/auth/me', (req, res) => {
-  const user = authenticatedUser(req);
+app.get('/api/auth/me', async (req, res) => {
+  const user = await authenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Session expired' });
   res.json({ user });
 });
 
 app.get('/api/account', async (req, res) => {
-  const sessionUser = authenticatedUser(req);
+  const sessionUser = await authenticatedUser(req);
   if (!sessionUser) return res.status(401).json({ error: 'Session expired' });
   try {
     if (mongoUsers) {
@@ -411,6 +491,10 @@ app.get('/api/account', async (req, res) => {
       if (!account) return res.status(401).json({ error: 'Account not found' });
       const user = publicUser({ ...account, id: account._id });
       sessions.set(req.headers.authorization.slice(7), user);
+      await mongoSessions.updateOne(
+        { _id: req.headers.authorization.slice(7) },
+        { $set: { user } }
+      );
       return res.json({ user, favorites: account.favorites || [] });
     }
     const [userRow] = queryRows('SELECT id, name, email FROM users WHERE id = ?', [sessionUser.id]);
@@ -427,7 +511,7 @@ app.get('/api/account', async (req, res) => {
 });
 
 app.put('/api/account/profile', async (req, res) => {
-  const sessionUser = authenticatedUser(req);
+  const sessionUser = await authenticatedUser(req);
   if (!sessionUser) return res.status(401).json({ error: 'Session expired' });
   const name = String(req.body.name || '').trim();
   if (!name || name.length > 80) {
@@ -440,10 +524,11 @@ app.put('/api/account/profile', async (req, res) => {
     }
     db.run('UPDATE users SET name = ? WHERE id = ?', [name, sessionUser.id]);
     if (!mongoUsers && db.getRowsModified() !== 1) return res.status(404).json({ error: 'Account not found' });
-    saveDatabase();
+    await saveDatabase();
     const user = { ...sessionUser, name };
     const token = req.headers.authorization.slice(7);
     sessions.set(token, user);
+    if (mongoSessions) await mongoSessions.updateOne({ _id: token }, { $set: { user } });
     res.json({ user });
   } catch (error) {
     console.error('Error updating account profile:', error);
@@ -452,7 +537,7 @@ app.put('/api/account/profile', async (req, res) => {
 });
 
 app.put('/api/account/favorites', async (req, res) => {
-  const user = authenticatedUser(req);
+  const user = await authenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Session expired' });
   const { propertyIds } = req.body;
   if (!Array.isArray(propertyIds) || propertyIds.length > 500 ||
@@ -495,7 +580,7 @@ app.put('/api/account/favorites', async (req, res) => {
     });
     db.run('COMMIT');
     transactionOpen = false;
-    saveDatabase();
+    await saveDatabase();
     res.json({ favorites: uniqueIds });
   } catch (error) {
     if (transactionOpen) db.run('ROLLBACK');
@@ -801,8 +886,8 @@ app.get('/api/properties/:id', (req, res) => {
   res.json(property);
 });
 
-app.get('/api/my-properties', (req, res) => {
-  const user = authenticatedUser(req);
+app.get('/api/my-properties', async (req, res) => {
+  const user = await authenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Sign in to view your listings' });
   res.json(getProperties().filter(property => property.ownerId === user.id));
 });
@@ -837,8 +922,8 @@ app.post('/api/train-model', async (req, res) => {
 });
 
 // Add new property
-app.post('/api/properties', (req, res) => {
-  const user = authenticatedUser(req);
+app.post('/api/properties', async (req, res) => {
+  const user = await authenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Sign in to list a property' });
 
   const {
@@ -878,7 +963,7 @@ app.post('/api/properties', (req, res) => {
     newProperty.id = queryRows('SELECT last_insert_rowid() AS id')[0].id;
     newProperty.sellerName = user.name;
     newProperty.sellerEmail = user.email;
-    saveDatabase();
+    await saveDatabase();
     res.status(201).json(newProperty);
   } catch (error) {
     console.error('Error saving property listing:', error);
@@ -895,6 +980,9 @@ app.get('/api/locations', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
+  if (process.env.NODE_ENV === 'production' && !process.env.MONGODB_URI) {
+    throw new Error('MONGODB_URI is required in production so listings persist across service restarts.');
+  }
   await initializeDatabase();
   await initializeMongoDatabase();
   const server = app.listen(PORT, () => {
