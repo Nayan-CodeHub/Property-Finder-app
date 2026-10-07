@@ -120,7 +120,17 @@ deploying. Do not set `PORT` manually; Render provides it at runtime.
 4. After deployment, check the assigned service URL ending in
    `/api/locations` for a JSON response. The free Render service can spin down when
    idle, so the first request after inactivity may take about a minute.
-5. Build the Android app with the deployed backend URL:
+5. To have the local website and Android app use the same accounts and listings,
+   create `.env.local` in `property-finder-app` and set `VITE_API_URL` to the
+   deployed API URL, such as:
+
+   ```dotenv
+   VITE_API_URL=https://your-service.onrender.com/api
+   ```
+
+   Restart Vite after changing this value. Without it, the local website uses the
+   local backend and its separate SQLite data.
+6. Build the Android app with the deployed backend URL:
 
    ```powershell
    $env:VITE_API_URL = "https://property-finder-api.onrender.com/api"
