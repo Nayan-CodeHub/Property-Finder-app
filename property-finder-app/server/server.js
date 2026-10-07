@@ -286,10 +286,13 @@ async function initializeDatabase() {
 
 async function initializeMongoDatabase() {
   if (!process.env.MONGODB_URI) return;
-  const configuredMongoUri = process.env.MONGODB_URI.trim();
-  const mongoUri = /^(['"]).*\1$/.test(configuredMongoUri)
-    ? configuredMongoUri.slice(1, -1).trim()
-    : configuredMongoUri;
+  let mongoUri = process.env.MONGODB_URI.trim();
+  if (mongoUri.startsWith('MONGODB_URI=')) {
+    mongoUri = mongoUri.slice('MONGODB_URI='.length).trim();
+  }
+  if (/^(['"]).*\1$/.test(mongoUri)) {
+    mongoUri = mongoUri.slice(1, -1).trim();
+  }
   if (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://')) {
     throw new Error('MONGODB_URI must start with mongodb:// or mongodb+srv://. Remove any surrounding quotes.');
   }
