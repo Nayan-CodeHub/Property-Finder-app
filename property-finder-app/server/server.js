@@ -286,7 +286,14 @@ async function initializeDatabase() {
 
 async function initializeMongoDatabase() {
   if (!process.env.MONGODB_URI) return;
-  mongoClient = new MongoClient(process.env.MONGODB_URI);
+  const configuredMongoUri = process.env.MONGODB_URI.trim();
+  const mongoUri = /^(['"]).*\1$/.test(configuredMongoUri)
+    ? configuredMongoUri.slice(1, -1).trim()
+    : configuredMongoUri;
+  if (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://')) {
+    throw new Error('MONGODB_URI must start with mongodb:// or mongodb+srv://. Remove any surrounding quotes.');
+  }
+  mongoClient = new MongoClient(mongoUri);
   await mongoClient.connect();
   mongoDatabase = mongoClient.db(process.env.MONGODB_DATABASE || 'property_finder');
   mongoUsers = mongoDatabase.collection('users');
