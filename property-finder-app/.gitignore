@@ -1,5 +1,9 @@
 # Dependencies
 node_modules/
+
+# Local Java runtime used for optional Android builds
+src/oracleJdk-27/
+
 npm-debug.log
 yarn-debug.log
 yarn-error.log
