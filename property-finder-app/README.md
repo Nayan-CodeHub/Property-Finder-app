@@ -4,6 +4,13 @@ Property Finder is a responsive real-estate discovery app for people looking for
 
 This repository contains the web app, its API server, and an Android app shell. The React web app is packaged for Android with Capacitor; it is not a separate React Native implementation.
 
+## Creator
+
+Created by **Nayan Gharat**.
+
+- Email: [nayangharat886@gmail.com](mailto:nayangharat886@gmail.com)
+- LinkedIn: [Nayan Gharat](https://www.linkedin.com/in/nayan-gharat-86207a357/)
+
 ## What the app does
 
 ### For home seekers

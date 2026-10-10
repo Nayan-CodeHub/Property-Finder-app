@@ -78,7 +78,27 @@ function AccountView({ view, session, favorites, properties, myProperties, onSig
     return <section className="account-view"><span className="auth-kicker">Your collection</span><h2>Saved homes</h2><p className="account-lede">Keep the places you want to come back to close at hand.</p>{savedProperties.length ? <div className="saved-property-grid">{savedProperties.map(property => <article className="saved-property" key={property.id}><img src={property.imageUrl} alt={property.name} /><div><strong>{property.name}</strong><span>{property.location} · {property.bhk} BHK</span></div></article>)}</div> : <div className="saved-empty"><span className="empty-icon">♡</span><h3>Your shortlist is empty</h3><p>Tap the heart on any property to save it here.</p></div>}</section>;
   }
   if (view === 'settings') {
-    return <section className="account-view"><span className="auth-kicker">Preferences</span><h2>Settings</h2><p className="account-lede">Make Property Finder feel right for you.</p><div className="settings-list"><div><div><strong>Email updates</strong><span>Receive new homes that match your taste</span></div><input type="checkbox" defaultChecked /></div><div><div><strong>Price display</strong><span>Show prices in Indian rupees</span></div><select defaultValue="inr"><option value="inr">INR · ₹</option></select></div><div><div><strong>Appearance</strong><span>Keep the interface light and focused</span></div><span className="setting-pill">Light</span></div></div></section>;
+    return (
+      <section className="account-view">
+        <span className="auth-kicker">Preferences</span>
+        <h2>Settings</h2>
+        <p className="account-lede">Make Property Finder feel right for you.</p>
+        <div className="settings-list">
+          <div><div><strong>Email updates</strong><span>Receive new homes that match your taste</span></div><input type="checkbox" defaultChecked /></div>
+          <div><div><strong>Price display</strong><span>Show prices in Indian rupees</span></div><select defaultValue="inr"><option value="inr">INR · ₹</option></select></div>
+          <div><div><strong>Appearance</strong><span>Keep the interface light and focused</span></div><span className="setting-pill">Light</span></div>
+        </div>
+        <section className="about-app" aria-labelledby="about-app-title">
+          <span className="auth-kicker">Made with care</span>
+          <h3 id="about-app-title">About this app</h3>
+          <p>Property Finder was created by <strong>Nayan Gharat</strong> to make finding and listing homes simpler.</p>
+          <div className="creator-links">
+            <a href="mailto:nayangharat886@gmail.com">nayangharat886@gmail.com</a>
+            <a href="https://www.linkedin.com/in/nayan-gharat-86207a357/" target="_blank" rel="noopener noreferrer">LinkedIn · Nayan Gharat</a>
+          </div>
+        </section>
+      </section>
+    );
   }
   if (view === 'my-listings') {
     return <section className="account-view"><span className="auth-kicker">Your properties</span><h2>My listings</h2><p className="account-lede">Manage the homes you have shared with buyers.</p>{myProperties.length ? <div className="saved-property-grid">{myProperties.map(property => <article className="saved-property" key={property.id}><img src={property.imageUrl} alt={property.name} /><div><strong>{property.name}</strong><span>{property.location} · {property.bhk} BHK · ₹{Number(property.actualPrice).toLocaleString()}</span><span>{property.photos?.length || 1} photo{(property.photos?.length || 1) === 1 ? '' : 's'}</span><div className="listing-actions"><button className="btn btn-secondary" onClick={() => onSelectProperty(property)}>View listing</button><button className="btn btn-secondary" onClick={() => onEditProperty(property)}>Edit listing</button></div></div></article>)}</div> : <div className="saved-empty"><span className="empty-icon">⌂</span><h3>You have not listed a property yet</h3><p>Create a listing so home seekers can discover and contact you.</p><button className="btn btn-primary listing-submit" onClick={onCreateListing}>List a property</button></div>}</section>;

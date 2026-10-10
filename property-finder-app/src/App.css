@@ -2360,3 +2360,47 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.about-app {
+  margin-top: 32px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  background: var(--surface);
+}
+
+.about-app h3 {
+  margin: 6px 0 8px;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.about-app > p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.about-app > p strong {
+  color: var(--ink);
+}
+
+.creator-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-top: 16px;
+}
+
+.creator-links a {
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.creator-links a:hover {
+  text-decoration: underline;
+}
