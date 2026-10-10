@@ -8,15 +8,44 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-    ))
+    caches.keys().then(async keys => {
+      const cacheNames = keys;
+      const cleanupTasks = cacheNames.map(async key => {
+        try {
+          const cache = await caches.open(key);
+          const entries = await cache.keys();
+          const sensitiveEntries = entries.filter(request => {
+            const url = new URL(request.url);
+            return url.pathname.startsWith('/api/') || request.headers.has('Authorization');
+          });
+          await Promise.all(sensitiveEntries.map(async request => {
+            try {
+              await cache.delete(request);
+            } catch (error) {
+              console.error('Failed to remove sensitive cached API/auth entry during activation:', error);
+            }
+          }));
+          if (key !== CACHE_NAME) {
+            await caches.delete(key);
+          }
+        } catch (error) {
+          console.error('Failed to clean cache during service worker activation:', error);
+        }
+      });
+      await Promise.all(cleanupTasks);
+    })
   );
   self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+  const hasAuthorization = event.request.headers.has('Authorization');
+  const isApiRequest = url.pathname.startsWith('/api/');
+
+  if (hasAuthorization || isApiRequest) return;
 
   event.respondWith(
     fetch(event.request)

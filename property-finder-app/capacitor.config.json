@@ -3,6 +3,9 @@
   "appName": "Property Finder",
   "webDir": "dist",
   "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
   "android": {
     "allowMixedContent": false
   }

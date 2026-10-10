@@ -312,6 +312,7 @@ export default function App() {
         if (!response.ok) {
           if (response.status === 401) {
             localStorage.removeItem(SESSION_KEY);
+            clearCachedAuthData();
             activeSessionToken.current = null;
             setSession(null);
             return;
@@ -341,6 +342,28 @@ export default function App() {
     loadAccount();
     return () => { active = false; };
   }, [session?.token, accountReload]);
+
+  const clearCachedAuthData = async () => {
+    if (!('caches' in window)) return;
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(async key => {
+        try {
+          const cache = await caches.open(key);
+          const entries = await cache.keys();
+          const sensitiveEntries = entries.filter(request => {
+            const url = new URL(request.url);
+            return url.pathname.startsWith('/api/') || request.headers.has('Authorization');
+          });
+          await Promise.all(sensitiveEntries.map(request => cache.delete(request)));
+        } catch (error) {
+          console.error('Failed to remove sensitive cached API/auth entries:', error);
+        }
+      }));
+    } catch (error) {
+      console.error('Failed to enumerate caches for auth cleanup:', error);
+    }
+  };
 
   const fetchLocations = async () => {
     try {
@@ -472,6 +495,7 @@ export default function App() {
   };
   const signOut = () => {
     localStorage.removeItem(SESSION_KEY);
+    clearCachedAuthData();
     activeSessionToken.current = null;
     setSession(null);
     setFavorites([]);
