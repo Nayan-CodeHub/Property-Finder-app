@@ -1,488 +1,265 @@
-# 🏠 Property Finder - AI-Powered Real Estate App
+# Property Finder
 
-An intelligent property search and discovery platform with **ML-based price prediction** that helps users find their perfect home based on requirements.
+Property Finder is a responsive real-estate discovery app for people looking for a home and owners who want to list one. Users can search homes with filters or a plain-language request, compare estimated prices, save favorites, view property details and contact sellers. Signed-in owners can publish listings, update details and prices, and add a photo gallery.
 
-## ✨ Features
+This repository contains the web app, its API server, and an Android app shell. The React web app is packaged for Android with Capacitor; it is not a separate React Native implementation.
 
-### 🔍 Smart Property Search
-- Filter properties by **BHK (Bedrooms)**, **Price**, **Location**, and **Furnishing Status**
-- Real-time search results with instant filtering
-- Support for multiple locations with dynamic location loading
-- Describe needs in plain English, e.g. “2 BHK furnished apartment under ₹50 lakh in Downtown”
-- Listings are ranked with a match percentage and visible reasons based on the details provided
+## What the app does
 
-### 🏡 Buy and Sell Properties
-- Signed-in users can publish and edit their property listings, including their asking price and property details
-- A listing can include up to five JPG, PNG, or WebP photos; buyers can browse them in the property details gallery
-- Listings are saved to the local property database and appear in Discover search results for all users; Discover refreshes while open
-- Sellers can view their own listings; buyers can email a seller from the property details
-- Listing photos must be JPG, PNG, or WebP, with a maximum of five photos and 5 MB total
-- Saved homes are stored per signed-in account; account credentials, profile names, and saved homes use MongoDB when configured
+### For home seekers
 
-### 💰 Dual Price Prediction Models
-The app uses **two complementary prediction methods**:
+- Browse property cards with location, price, type, area, bedrooms, furnishing and amenities.
+- Filter listings by criteria such as location, property type, price, size and furnishing.
+- Describe a search in plain English, for example: `2 BHK furnished apartment under ₹50 lakh in Downtown`.
+- See ranked matches and the criteria/reasons used to rank them.
+- Open property details, browse available photos, review amenities and specifications, and email the seller.
+- Save and revisit favorite homes with an account.
+- Get a formula-based and machine-learning price estimate for a property's size, location and furnishing.
 
-#### 1. **Formula-Based Prediction** (Fast & Interpretable)
+### For property owners
+
+- Register or sign in to create a listing.
+- Add property details, amenities, asking price and up to five JPG, PNG or WebP images (5 MB decoded image data total).
+- Review and remove photos before publishing.
+- View and edit their own listings, including the asking price and photos.
+- Buyers can see seller contact details on listings that have an associated account.
+
+### Accounts and mobile use
+
+- Edit the display name and manage saved properties.
+- Install the web app as a Progressive Web App (PWA) in supported browsers.
+- Use the Capacitor Android app, which packages the same web interface.
+- The service worker caches the app shell for offline startup; account and API responses are not cached.
+
+## A short explanation you can use
+
+> “Property Finder is a real-estate search app built with React and Node.js. It helps users find homes using filters or a natural-language search, compare price estimates, and save properties. Sellers can publish a listing with multiple photos and later update its price or details. The app has a responsive web interface and an Android version built with Capacitor.”
+
+**Hinglish version:**
+
+> “Property Finder ek real-estate search app hai. Isme users filters ya normal language mein apni requirement likhkar ghar dhoondh sakte hain, price estimate dekh sakte hain aur pasand ke ghar save kar sakte hain. Property owners apni listing photos ke saath publish karte hain aur baad mein price aur details edit kar sakte hain. App React aur Node.js se bana hai, aur iska Android version Capacitor se package kiya gaya hai.”
+
+### Suggested demo flow
+
+1. Open Discover and show the filters and plain-language search.
+2. Enter a search request and point out the ranked results and match reasons.
+3. Open a property to show its details and photo gallery.
+4. Open Saved to demonstrate account-based favorites.
+5. Open My Listings, choose **Edit listing**, and show the price and photo controls.
+6. Do not press **Save changes** during a demo unless you intend to change the listing.
+7. Optionally show the price predictor and explain that its result is an estimate.
+
+## How it is built
+
+```text
+Browser / Android WebView
+          │
+          │ HTTPS/HTTP JSON requests
+          ▼
+React 18 + Vite frontend
+          │
+          │ REST API (/api/...)
+          ▼
+Node.js + Express backend
+     ┌────┴──────────────┐
+     │                   │
+sql.js / SQLite       TensorFlow.js
+listings, accounts,   price-prediction
+favorites, photos     model (in memory)
+     │
+     └── Optional MongoDB Atlas
+         account data + SQLite snapshots in GridFS
 ```
-Price = Size × Base Price per sq ft × Location Multiplier × Furnished Bonus
-```
-- **Base Price**: ₹200/sq ft
-- **Location Multipliers**: Downtown (1.5x), Suburbs (1.0x), Outskirts (0.7x)
-- **Furnished Bonus**: 1.2x if furnished, 1.0x if unfurnished
-
-#### 2. **Machine Learning Model** (Accurate & Adaptive)
-- **Architecture**: Neural Network with 4 layers
-  - Input Layer: 4 features (BHK, Size, Location, Furnished)
-  - Hidden Layers: 64 → 32 → 16 neurons with Dropout
-  - Output Layer: Single price prediction
-- **Training**: 100 epochs with Adam optimizer
-- **Accuracy**: Continuously improves as more properties are added
-- **Framework**: TensorFlow.js for browser-based ML
-
-### 📊 Price Prediction Features
-- **Real-time Prediction**: Instantly predict prices for custom property specifications
-- **Confidence Scoring**: Get confidence levels (Medium/High)
-- **Dual Output**: Compare formula-based vs ML predictions
-- **Average Price**: Get average of both models for balanced estimate
-- **Model Training**: Server automatically trains on all properties for accuracy
-
-### 📱 Installable App (PWA)
-- Install Property Finder from a supported browser as a standalone app
-- App icon and mobile home-screen metadata included
-- App shell is cached for faster repeat visits and offline loading
-
-## 🛠️ Tech Stack
 
 ### Frontend
-- **React 18** - UI Framework
-- **Vite** - Build tool & dev server
-- **CSS3** - Modern styling
 
-### Backend
-- **Node.js + Express** - Server framework
-- **TensorFlow.js** - Machine learning in Node.js
-- **MongoDB** - Account credentials, profile names, and saved homes (when configured)
-- **SQLite** - Property listings and sample property data (`server/data/properties.db`)
-- **CORS** - Cross-origin resource sharing
+- **React 18** renders the search, account, listing and property-detail screens.
+- **Vite** runs the local development server and creates the production web bundle in `dist/`.
+- **CSS** provides the responsive desktop and mobile layout.
+- The frontend calls the Express API using `fetch`. `VITE_API_URL` can point the app at a shared/deployed API.
+- The PWA manifest, app icon and service worker are in `public/`.
 
-## 📋 Prerequisites
+### Backend and data
 
-Before you begin, ensure you have installed:
-- **Node.js** (v16 or higher) - [Download](https://nodejs.org/)
-- **npm** (comes with Node.js)
-- A **code editor** (VS Code recommended)
-- A **web browser** (Chrome, Firefox, Safari, Edge)
+- **Node.js and Express** provide the JSON API, authentication and listing operations.
+- **sql.js** provides the SQLite database. The server exports changes to `server/data/properties.db` by default; `PROPERTY_DATABASE_PATH` can select another path.
+- Listings, owner IDs, favorites, account records (when running locally without MongoDB), and uploaded image data are stored in the SQLite database.
+- A database with no property rows is initialized with six sample properties. Existing databases are kept and updated with additive schema migrations.
+- When `MONGODB_URI` is configured, account records are stored in MongoDB and the SQLite database snapshot is stored in MongoDB GridFS. This supports persistence on hosts with temporary filesystems, such as a free Render service.
+- In local development without MongoDB, the SQLite file is the local source of persisted data. Local data and a deployed database are separate unless the frontend is configured to use the deployed API.
 
-## 🚀 Installation & Setup
+### Search and price estimates
 
-### Step 1: Clone/Download the Project
-```bash
-# Navigate to project directory
-cd property-finder-app
-```
+- Natural-language search is parsed by backend JavaScript rules. It recognizes supported criteria such as bedroom count, budget, furnishing, property type, location, amenities and keywords.
+- Listings receive an explainable match score based on recognized criteria; results are ranked by score and then price. This is a rule-based matcher, not a large-language-model conversation or a promise that a home is suitable.
+- The formula estimator uses area, a base price per square foot, a location multiplier and a furnishing bonus.
+- A TensorFlow.js dense neural network is trained on available listings when the server starts. The prediction endpoint returns the formula estimate, ML estimate (when available), an average and a confidence label.
+- The ML model is held in server memory and retrained at startup. Its output depends on available listing data. The sample dataset is small, so predictions are for demonstration and should not be treated as professional valuations.
 
-### Step 2: Install Dependencies
-```bash
+### Authentication and privacy
+
+- Passwords are stored as salted hashes using Node.js `scrypt`; plaintext passwords are not stored.
+- Authenticated API requests use bearer session tokens. When MongoDB is configured, session records have an expiry; without MongoDB, sessions are held in the running server process.
+- The service worker excludes API and authenticated requests from its cache and removes sensitive cached API/auth entries during activation.
+- Keep `.env` and `.env.local` private. Never commit database credentials, real user data or uploaded listing data.
+
+## Technology stack
+
+| Area | Technology |
+| --- | --- |
+| Web UI | React 18, JavaScript, CSS |
+| Development/build | Vite |
+| API | Node.js, Express, REST/JSON |
+| Relational data | SQLite through sql.js |
+| Optional hosted persistence | MongoDB Node.js driver and GridFS |
+| Price model | TensorFlow.js |
+| Installable web app | Web App Manifest, Service Worker |
+| Android packaging | Capacitor 8, Android Gradle project |
+
+## Run locally
+
+### Requirements
+
+- Node.js (Node 22 or newer is recommended for the Capacitor 8 toolchain) and npm.
+- Android Studio and Android SDK only if you want to build or run the Android app.
+- MongoDB Atlas is optional for local development; it is required for the documented production setup that persists data across temporary-host restarts.
+
+### Install and start
+
+From the `property-finder-app` directory:
+
+```powershell
 npm install
-```
-
-This installs the frontend, backend, SQLite, and MongoDB dependencies. The local property database is created and populated with sample listings the first time the server starts.
-
-### Configure MongoDB account storage
-
-1. Copy `.env.example` to `.env` in the project folder.
-2. In MongoDB Atlas, create a database user, allow your current IP in Network Access, and choose **Connect → Drivers**.
-3. Put the Atlas connection string in `MONGODB_URI` in `.env`, replacing `USERNAME`, `PASSWORD`, and `CLUSTER_HOST` with your values. URI-encode special characters in the database password.
-4. Keep `MONGODB_DATABASE=property_finder` or set it to your preferred database name.
-5. Restart the backend with `npm run server` (or restart `npm run dev`).
-
-Do not share or commit `.env`; it is ignored by Git. When `MONGODB_URI` is set, account records (including password hashes), profile names, and saved home IDs are stored in MongoDB. Existing local accounts and saved homes are copied to MongoDB the first time the backend connects. Locally, property listings and uploaded listing images use the SQLite database at
-`server/data/properties.db`. On the free Render setup below, SQLite snapshots are
-persisted to MongoDB GridFS because Render's filesystem is temporary.
-
-Without `MONGODB_URI`, the app retains its SQLite-only account storage for local development.
-
-### Deploy the backend to Render
-
-The repository includes a free Render Blueprint for the Node.js backend. It uses
-`property-finder-app` as the service root. Free Render filesystems are temporary, so
-the backend requires MongoDB and stores SQLite application snapshots in MongoDB
-GridFS; listings, uploaded images, and the local SQL state survive service restarts.
-Create a free MongoDB Atlas database and configure `MONGODB_URI` in Render before
-deploying. Do not set `PORT` manually; Render provides it at runtime.
-
-1. Create a free MongoDB Atlas cluster and database user. Allow Render connections
-   in Atlas Network Access (for example, `0.0.0.0/0`), and keep the database password
-   private.
-2. Push the repository to GitHub without committing `.env`.
-3. In Render, create a Blueprint and select this repository. In the service's
-   Environment settings, set `MONGODB_URI` to the Atlas connection string and save.
-   `MONGODB_DATABASE` defaults to `property_finder`.
-4. After deployment, check the assigned service URL ending in
-   `/api/locations` for a JSON response. The free Render service can spin down when
-   idle, so the first request after inactivity may take about a minute.
-5. To have the local website and Android app use the same accounts and listings,
-   create `.env.local` in `property-finder-app` and set `VITE_API_URL` to the
-   deployed API URL, such as:
-
-   ```dotenv
-   VITE_API_URL=https://your-service.onrender.com/api
-   ```
-
-   Restart Vite after changing this value. Without it, the local website uses the
-   local backend and its separate SQLite data.
-6. Build the Android app with the deployed backend URL:
-
-   ```powershell
-   $env:VITE_API_URL = "https://property-finder-api.onrender.com/api"
-   npm run mobile:build
-   ```
-
-   Replace the URL if Render assigns a different service hostname. Install the new
-   APK after the build; an already-installed APK keeps using its previous API URL.
-   Free Render instances have usage limits and are intended for testing/hobby use.
-
-### Step 3: Start the App
-```bash
-# Either command starts both the backend and frontend
 npm run client
-# or
-npm run dev
 ```
 
-This command runs:
-- **Backend Server**: http://localhost:5000
-- **Frontend App**: http://localhost:3000
+Open [http://localhost:3000](http://localhost:3000). The `client` script starts Vite on port `3000` and the API server on port `5000`. `npm run dev` is an alias for the same combined command.
 
-### Install as an App
+To run the processes separately, use two terminals:
 
-After deploying the frontend over HTTPS, open it in Chrome or Edge and use the install icon in the address bar or browser menu. On mobile, use **Add to Home screen**. The app opens in its own standalone window after installation.
-
-### Build the Android App
-
-The project also includes a Capacitor Android shell:
-
-```bash
-npm run mobile:build   # Build the web app and sync Android assets
-npm run android:open   # Open the native project in Android Studio
-npm run android:run    # Run on an Android emulator or device
+```powershell
+npm run server
+npm run frontend
 ```
 
-Android Studio, the Android SDK, and `ANDROID_HOME` are required to produce an APK. For a physical device, configure the frontend API URL to point to a deployed backend; `localhost` inside a phone refers to the phone itself.
+The first server start creates the local SQLite database and its sample listings if the database is empty.
 
-## 📖 Project Structure
+### Environment configuration
 
+Copy `.env.example` to `.env` for backend settings. The connection URI is a secret; do not add its real value to Git or share it in screenshots.
+
+```dotenv
+MONGODB_URI=
+MONGODB_DATABASE=property_finder
+# PROPERTY_DATABASE_PATH=
 ```
+
+To make the local web app use a deployed API instead of the local server, create `.env.local`:
+
+```dotenv
+VITE_API_URL=https://your-api-host.example/api
+```
+
+Restart Vite after changing frontend environment variables. Variables beginning with `VITE_` are bundled into frontend code and must not contain secrets. Without `VITE_API_URL`, the app uses its local API configuration.
+
+## Build and run Android
+
+Build the web production bundle and copy it into the Capacitor Android project:
+
+```powershell
+npm run mobile:build
+```
+
+Open the Android project in Android Studio:
+
+```powershell
+npm run android:open
+```
+
+Run on a configured emulator/device:
+
+```powershell
+npm run android:run
+```
+
+To build a debug APK from the Android project:
+
+```powershell
+Set-Location android
+.\gradlew.bat assembleDebug
+```
+
+The normal debug APK output is `android/app/build/outputs/apk/debug/app-debug.apk`. If building on a phone or a different computer, configure `VITE_API_URL` to a reachable deployed backend before `mobile:build`; `localhost` on the phone refers to the phone, not the development computer. Reinstall the APK after rebuilding to see bundled frontend changes.
+
+## REST API overview
+
+All routes are under `/api`. Authenticated routes require an `Authorization: Bearer <token>` header.
+
+| Method | Endpoint | Purpose | Authentication |
+| --- | --- | --- | --- |
+| `POST` | `/auth/register` | Create an account | No |
+| `POST` | `/auth/login` | Sign in | No |
+| `GET` | `/auth/me` | Validate the current session | Yes |
+| `GET` | `/account` | Load profile and favorite IDs | Yes |
+| `PUT` | `/account/profile` | Update profile name | Yes |
+| `PUT` | `/account/favorites` | Replace saved property IDs | Yes |
+| `GET` | `/properties` | List and filter properties | No |
+| `GET` | `/properties/:id` | Get property details and photos | No |
+| `POST` | `/properties` | Create a property listing | Yes |
+| `PUT` | `/properties/:id` | Update a listing owned by the user | Yes |
+| `GET` | `/my-properties` | List the signed-in user's listings | Yes |
+| `POST` | `/recommendations` | Parse a text query and rank listings | No |
+| `POST` | `/predict-price` | Return formula and ML estimates | No |
+| `POST` | `/train-model` | Train the price model on current listings | No |
+| `GET` | `/locations` | Return known listing locations | No |
+
+Property create/update validates listing fields and photo data. An update returns `403` if the signed-in user does not own the listing. Photos are limited to five JPEG, PNG or WebP data URLs and 5 MiB of decoded image data in total.
+
+## Project structure
+
+```text
 property-finder-app/
+├── android/                 # Capacitor Android project
+├── docs/                    # Additional project documentation
+├── public/                  # PWA manifest, service worker and icon
 ├── server/
-│   └── server.js          # Express backend with API endpoints
+│   ├── data/                # Local SQLite database (generated)
+│   └── server.js            # Express API, persistence and ML model
 ├── src/
-│   ├── App.jsx            # Main React component
-│   ├── App.css            # Styling
-│   └── main.jsx           # React entry point
-├── public/
-│   ├── manifest.webmanifest # Installable app metadata
-│   ├── service-worker.js    # App shell caching
-│   └── icon.svg             # App icon
-├── index.html            # HTML template
-├── vite.config.js        # Vite configuration
-├── package.json          # Dependencies
-└── README.md             # This file
+│   ├── App.jsx              # React screens and app behavior
+│   ├── App.css              # UI styling and responsive layout
+│   └── main.jsx             # React entry point and service-worker setup
+├── .env.example             # Safe environment-variable template
+├── capacitor.config.json    # Capacitor app configuration
+├── package.json             # Dependencies and npm scripts
+└── vite.config.js           # Vite development-server configuration
 ```
 
-## 🔌 API Endpoints
+## Deployment notes
 
-### POST `/api/recommendations`
-Rank current listings against a plain-language property request. The recommendation score is explainable matching against fields in each listing; it is not a guarantee of suitability or a generated AI response.
+- The backend uses the `PORT` environment variable supplied by its host (default `5000` for local development).
+- For a host with temporary disk storage, configure `MONGODB_URI` before starting the backend. The server refuses production startup without it.
+- Set `MONGODB_DATABASE` if the default `property_finder` database name is not desired.
+- Point the web build or Android build to the deployed API using `VITE_API_URL`.
+- The first request to a free or sleeping backend may take longer while the service starts.
+- Never include real `.env` files, secrets, private user data or local database files in a public repository.
 
-**Request Body:**
-```json
-{
-  "query": "2 BHK furnished apartment under ₹50 lakh in Downtown"
-}
-```
+## Current scope and limitations
 
-The response includes recognized criteria and listings ranked by `matchScore` (0–100), with `matchReasons` for the score.
+- Search parsing and ranking use explicit JavaScript rules, not an LLM.
+- Price outputs are estimates from a simple formula and a small-data neural network; they are not appraisals or financial advice.
+- The trained model is in memory and is not persisted as a model artifact.
+- Without MongoDB, account and listing persistence is local to the configured SQLite database; that data is not automatically shared with another device.
+- PWA offline support is for the app shell. Search, account, listing and other API features need a reachable backend.
+- Photo upload supports embedded JPG, PNG and WebP files within the documented limits; it is not a cloud image-hosting service.
 
-### GET `/api/properties`
-Get all properties with optional filters.
+## Validation
 
-**Query Parameters:**
-- `bhk` (number): Filter by number of bedrooms
-- `maxPrice` (number): Filter by maximum price
-- `location` (string): Filter by location
-- `furnished` (boolean): Filter by furnishing status
+Useful checks from the project directory:
 
-**Example:**
-```
-GET /api/properties?bhk=2&maxPrice=500000&location=Downtown
-```
-
-### POST `/api/predict-price`
-Predict property price using both models.
-
-**Request Body:**
-```json
-{
-  "bhk": 2,
-  "size": 900,
-  "location": "Downtown",
-  "furnished": true
-}
-```
-
-**Response:**
-```json
-{
-  "formulaPrice": 450000,
-  "mlPrice": 465000,
-  "averagePrice": 457500,
-  "confidence": "high"
-}
-```
-
-### POST `/api/train-model`
-Manually train the ML model (runs automatically on startup).
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Model trained successfully"
-}
-```
-
-### GET `/api/locations`
-Get list of all available locations.
-
-### GET `/api/properties/:id`
-Get details of a specific property.
-
-### Account endpoints
-
-The following endpoints require `Authorization: Bearer <token>`:
-
-- `GET /api/account` - Load account profile and saved property IDs
-- `PUT /api/account/profile` - Save the account name
-- `PUT /api/account/favorites` - Save the account's property IDs as `{ "propertyIds": [1, 2] }`
-
-### POST `/api/properties`
-Add a new property to the SQLite database. Required JSON fields: `name`, `location`, `latitude`, `longitude`, `bhk`, `size`, `furnished`, `actualPrice`, and `amenities` (an array of strings). The database is stored at `server/data/properties.db` and seeded with the six sample properties only when first created. Back up this file to preserve local property data.
-
-## 💡 How the ML Model Works
-
-### Data Flow
-1. **Training Phase** (Server Startup):
-   - Model reads all existing properties
-   - Extracts features: BHK, Size, Location multiplier, Furnished status
-   - Learns relationship between features and actual prices
-   - Saves weights in memory
-
-2. **Prediction Phase** (User Request):
-   - User inputs property specifications
-   - Model uses learned weights to predict price
-   - Returns prediction with confidence score
-
-### Model Architecture
-```
-Input [BHK, Size, Location, Furnished]
-     ↓
-Dense(64) + ReLU + Dropout(0.2)
-     ↓
-Dense(32) + ReLU + Dropout(0.2)
-     ↓
-Dense(16) + ReLU
-     ↓
-Dense(1) - Linear Output (Price)
-```
-
-### Improving Accuracy
-- **Add More Properties**: Model learns better with more training data
-- **Diversify Locations**: Include properties from different areas
-- **Vary Sizes**: Include small, medium, and large properties
-- **Mix Furnished Status**: Include both furnished and unfurnished options
-
-## 🎯 Usage Guide
-
-### 1. Search for Properties
-1. Click the **Search Filters** panel on the left
-2. Adjust filters:
-   - **BHK**: Select number of bedrooms
-   - **Max Price**: Slide to set maximum budget
-   - **Location**: Choose from dropdown
-   - **Furnished**: Select preference
-3. Click **Search** button
-4. Browse matching properties in the results list
-
-### 2. View Property Details
-- Click any **property card** in the list for details
-- Cards highlight when selected
-- View all amenities and specifications
-
-### 3. Predict Property Price
-1. Go to **Price Predictor** section
-2. Enter specifications:
-   - BHK (number of bedrooms)
-   - Size (square feet)
-   - Location
-   - Furnished status
-3. Click **Predict Price**
-4. View predictions:
-   - **Formula-based**: Quick estimate using algorithm
-   - **ML-based**: Advanced prediction from trained model
-   - **Average**: Combined estimate for best accuracy
-
-## 🧠 Sample Data
-
-The app comes with 6 sample properties:
-
-| Name | Location | BHK | Size | Price | Furnished |
-|------|----------|-----|------|-------|-----------|
-| Modern 2BHK Apartment | Downtown | 2 | 900 | ₹450,000 | Yes |
-| Cozy 2BHK Flat | Suburbs | 2 | 750 | ₹280,000 | No |
-| Spacious 2BHK Villa | Downtown | 2 | 1200 | ₹550,000 | Yes |
-| Budget 2BHK Apartment | Suburbs | 2 | 600 | ₹200,000 | No |
-| Luxury 2BHK Penthouse | Downtown | 2 | 1500 | ₹750,000 | Yes |
-| Semi-Furnished 2BHK | Suburbs | 2 | 850 | ₹320,000 | No |
-
-## 🔧 Customization
-
-### Adding More Properties
-Edit `server.js` and add to the `properties` array:
-```javascript
-{
-  id: 7,
-  name: "Your Property Name",
-  location: "Location Name",
-  latitude: 28.xxxx,
-  longitude: 77.xxxx,
-  bhk: 2,
-  size: 900,
-  furnished: true,
-  actualPrice: 450000,
-  amenities: ["Pool", "Gym", "Parking"]
-}
-```
-
-### Changing Location Multipliers
-Edit `locationMultipliers` in `server.js`:
-```javascript
-const locationMultipliers = {
-  "Downtown": 1.5,
-  "Suburbs": 1.0,
-  "Outskirts": 0.7
-};
-```
-
-### Adjusting Base Price
-Edit in `formulaBasedPrice` function:
-```javascript
-const basePrice = 200; // Change this value (price per sq ft)
-```
-
-### Modifying ML Model
-Edit the model architecture in `trainModel` function:
-```javascript
-mlModel = tf.sequential({
-  layers: [
-    tf.layers.dense({ units: 128, activation: 'relu', inputShape: [4] }), // Change units
-    // Customize layers here
-  ]
-});
-```
-
-## 📈 Performance Tips
-
-### For Better Predictions
-1. **Train with More Data**: Add 20-30 properties for better accuracy
-2. **Balance Dataset**: Include properties of all sizes and prices
-3. **Geographic Diversity**: Add properties from different areas
-4. **Price Accuracy**: Ensure historical prices are accurate
-
-### For Faster App
-1. **Production Build**: Use `npm run build`
-2. **Deploy Frontend**: Host on Vercel, Netlify
-3. **Deploy Backend**: Use Heroku, AWS, DigitalOcean
-4. **Database**: Switch to MongoDB for scalability
-
-## 🚢 Deployment
-
-### Frontend (Vercel Example)
-```bash
+```powershell
 npm run build
-# Deploy the dist/ folder to Vercel
+node --check server/server.js
 ```
 
-### Backend (Heroku Example)
-```bash
-# Install Heroku CLI
-heroku login
-heroku create your-app-name
-heroku config:set CORS_ORIGIN=https://your-frontend.com
-git push heroku main
-```
-
-## 🐛 Troubleshooting
-
-### Port 5000 already in use
-```bash
-# Windows
-netstat -ano | findstr :5000
-taskkill /PID <PID> /F
-
-# Mac/Linux
-lsof -i :5000
-kill -9 <PID>
-```
-
-### CORS errors
-Ensure backend is running on port 5000 and API_BASE in App.jsx is correct:
-```javascript
-const API_BASE = 'http://localhost:5000/api';
-```
-
-### ML Model not training
-- Ensure properties have valid data
-- Check browser console for TensorFlow.js errors
-- Try refreshing the page
-
-## 📚 Learning Resources
-
-- **React**: https://react.dev
-- **Express**: https://expressjs.com
-- **TensorFlow.js**: https://www.tensorflow.org/js
-- **Vite**: https://vitejs.dev
-
-## 📝 Future Enhancements
-
-- [ ] User authentication & saved properties
-- [ ] Advanced ML models (Random Forest, XGBoost)
-- [ ] Image uploads for properties
-- [ ] Reviews & ratings system
-- [ ] Chat with sellers
-- [ ] Virtual tours using 360° images
-- [ ] Mortgage calculator
-- [ ] Neighborhood analytics
-- [ ] Price trend graphs
-- [ ] Mobile app (React Native)
-
-## 📄 License
-
-This project is open source and available for educational and commercial use.
-
-## 🤝 Contributing
-
-Feel free to fork, modify, and enhance this project!
-
-## ❓ Need Help?
-
-1. Check the troubleshooting section above
-2. Review the API endpoints documentation
-3. Check browser console for error messages
-4. Ensure both servers are running on correct ports
-
----
-
-**Happy property hunting! 🏠🎉**
-
-Created with ❤️ for real estate seekers and developers.
+For Android, run `npm run mobile:build` and then build the Android Gradle project.
