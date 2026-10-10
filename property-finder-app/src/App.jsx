@@ -72,7 +72,7 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }) {
   );
 }
 
-function AccountView({ view, session, favorites, properties, myProperties, onSignOut, onSessionChange, onSelectProperty, onCreateListing }) {
+function AccountView({ view, session, favorites, properties, myProperties, onSignOut, onSessionChange, onSelectProperty, onEditProperty, onCreateListing }) {
   if (view === 'saved') {
     const savedProperties = properties.filter(property => favorites.includes(property.id));
     return <section className="account-view"><span className="auth-kicker">Your collection</span><h2>Saved homes</h2><p className="account-lede">Keep the places you want to come back to close at hand.</p>{savedProperties.length ? <div className="saved-property-grid">{savedProperties.map(property => <article className="saved-property" key={property.id}><img src={property.imageUrl} alt={property.name} /><div><strong>{property.name}</strong><span>{property.location} · {property.bhk} BHK</span></div></article>)}</div> : <div className="saved-empty"><span className="empty-icon">♡</span><h3>Your shortlist is empty</h3><p>Tap the heart on any property to save it here.</p></div>}</section>;
@@ -81,7 +81,7 @@ function AccountView({ view, session, favorites, properties, myProperties, onSig
     return <section className="account-view"><span className="auth-kicker">Preferences</span><h2>Settings</h2><p className="account-lede">Make Property Finder feel right for you.</p><div className="settings-list"><div><div><strong>Email updates</strong><span>Receive new homes that match your taste</span></div><input type="checkbox" defaultChecked /></div><div><div><strong>Price display</strong><span>Show prices in Indian rupees</span></div><select defaultValue="inr"><option value="inr">INR · ₹</option></select></div><div><div><strong>Appearance</strong><span>Keep the interface light and focused</span></div><span className="setting-pill">Light</span></div></div></section>;
   }
   if (view === 'my-listings') {
-    return <section className="account-view"><span className="auth-kicker">Your properties</span><h2>My listings</h2><p className="account-lede">Manage the homes you have shared with buyers.</p>{myProperties.length ? <div className="saved-property-grid">{myProperties.map(property => <article className="saved-property" key={property.id}><img src={property.imageUrl} alt={property.name} /><div><strong>{property.name}</strong><span>{property.location} · {property.bhk} BHK · ₹{Number(property.actualPrice).toLocaleString()}</span><button className="btn btn-secondary" onClick={() => onSelectProperty(property)}>View listing</button></div></article>)}</div> : <div className="saved-empty"><span className="empty-icon">⌂</span><h3>You have not listed a property yet</h3><p>Create a listing so home seekers can discover and contact you.</p><button className="btn btn-primary listing-submit" onClick={onCreateListing}>List a property</button></div>}</section>;
+    return <section className="account-view"><span className="auth-kicker">Your properties</span><h2>My listings</h2><p className="account-lede">Manage the homes you have shared with buyers.</p>{myProperties.length ? <div className="saved-property-grid">{myProperties.map(property => <article className="saved-property" key={property.id}><img src={property.imageUrl} alt={property.name} /><div><strong>{property.name}</strong><span>{property.location} · {property.bhk} BHK · ₹{Number(property.actualPrice).toLocaleString()}</span><span>{property.photos?.length || 1} photo{(property.photos?.length || 1) === 1 ? '' : 's'}</span><div className="listing-actions"><button className="btn btn-secondary" onClick={() => onSelectProperty(property)}>View listing</button><button className="btn btn-secondary" onClick={() => onEditProperty(property)}>Edit listing</button></div></div></article>)}</div> : <div className="saved-empty"><span className="empty-icon">⌂</span><h3>You have not listed a property yet</h3><p>Create a listing so home seekers can discover and contact you.</p><button className="btn btn-primary listing-submit" onClick={onCreateListing}>List a property</button></div>}</section>;
   }
   return <ProfileView session={session} favorites={favorites} properties={properties} onSignOut={onSignOut} onSessionChange={onSessionChange} />;
 }
@@ -123,47 +123,60 @@ function ProfileView({ session, favorites, properties, onSignOut, onSessionChang
   return <section className="account-view"><span className="auth-kicker">Your account</span><h2>Profile</h2><p className="account-lede">Manage your details and make your search more personal.</p><div className="profile-card"><div className="profile-avatar">{session.name?.charAt(0).toUpperCase()}</div>{editing ? <form className="profile-edit-form" onSubmit={saveProfile}><label>Full name<input required maxLength="80" value={name} onChange={event => setName(event.target.value)} autoFocus /></label>{error && <p className="form-error" role="alert">{error}</p>}<div><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button><button className="cancel-edit" type="button" disabled={saving} onClick={() => { setName(session.name); setEditing(false); setError(''); }}>Cancel</button></div></form> : <><div><h3>{session.name}</h3><p>{session.email}</p><span className="member-since">Member since today</span></div><button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit profile</button></>}</div><div className="profile-stats"><div><strong>{favorites.length}</strong><span>saved homes</span></div><div><strong>0</strong><span>active alerts</span></div><div><strong>{properties.length}</strong><span>market listings</span></div></div><button className="sign-out" onClick={onSignOut}>Sign out of this device</button></section>;
 }
 
-function SellPropertyForm({ session, onCreated }) {
-  const [form, setForm] = useState({
-    name: '', location: '', propertyType: 'Apartment', bhk: '2', bathrooms: '1',
-    size: '', actualPrice: '', yearBuilt: '', furnished: false, amenities: '', description: ''
-  });
-  const [imageUrl, setImageUrl] = useState('');
+function SellPropertyForm({ session, property, onSaved, onCancel }) {
+  const [form, setForm] = useState(() => ({
+    name: property?.name || '', location: property?.location || '', propertyType: property?.propertyType || 'Apartment',
+    bhk: String(property?.bhk || 2), bathrooms: String(property?.bathrooms || 1),
+    size: property?.size ? String(property.size) : '', actualPrice: property?.actualPrice ? String(property.actualPrice) : '',
+    yearBuilt: property?.yearBuilt ? String(property.yearBuilt) : '', furnished: property?.furnished || false,
+    amenities: property?.amenities?.join(', ') || '', description: property?.description || ''
+  }));
+  const [photos, setPhotos] = useState(() => property?.photos?.length ? property.photos : (property?.imageUrl ? [property.imageUrl] : []));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const isEditing = Boolean(property);
 
   const updateField = (field, value) => setForm(current => ({ ...current, [field]: value }));
 
-  const selectPhoto = event => {
-    const file = event.target.files?.[0];
+  const selectPhotos = async event => {
+    const files = [...(event.target.files || [])];
+    event.target.value = '';
     setError('');
-    if (!file) {
-      setImageUrl('');
+    if (!files.length) return;
+    const currentBytes = photos.reduce((total, photo) => {
+      if (!photo.startsWith('data:image/')) return total;
+      return total + Math.floor((photo.split(',')[1] || '').length * 3 / 4);
+    }, 0);
+    if (photos.length + files.length > 5 ||
+        files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size === 0) ||
+        currentBytes + files.reduce((total, file) => total + file.size, 0) > 5 * 1024 * 1024) {
+      setError('Choose up to 5 JPG, PNG, or WebP photos with no more than 5 MB total.');
       return;
     }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      setImageUrl('');
-      event.target.value = '';
-      setError('Choose a JPG, PNG, or WebP photo smaller than 5 MB.');
-      return;
+    try {
+      const loadedPhotos = await Promise.all(files.map(file => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}. Please choose it again.`));
+        reader.readAsDataURL(file);
+      })));
+      setPhotos(current => [...current, ...loadedPhotos]);
+    } catch (photoError) {
+      setError(photoError.message);
     }
-    const reader = new FileReader();
-    reader.onload = () => setImageUrl(String(reader.result));
-    reader.onerror = () => setError('We could not read that photo. Please choose it again.');
-    reader.readAsDataURL(file);
   };
 
   const submit = async event => {
     event.preventDefault();
     setError('');
-    if (!imageUrl) {
+    if (!photos.length) {
       setError('Add a property photo before publishing your listing.');
       return;
     }
     setSaving(true);
     try {
-      const response = await fetch(`${API_BASE}/properties`, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE}/properties${isEditing ? `/${property.id}` : ''}`, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.token}`
@@ -176,12 +189,13 @@ function SellPropertyForm({ session, onCreated }) {
           actualPrice: Number(form.actualPrice),
           yearBuilt: form.yearBuilt ? Number(form.yearBuilt) : null,
           amenities: form.amenities.split(',').map(amenity => amenity.trim()).filter(Boolean),
-          imageUrl
+          photos,
+          imageUrl: photos[0]
         })
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Unable to publish your listing.');
-      onCreated(result);
+      if (!response.ok) throw new Error(result.error || `Unable to ${isEditing ? 'update' : 'publish'} your listing.`);
+      onSaved(result);
     } catch (submitError) {
       setError(submitError.message === 'Failed to fetch' ? 'The server is unavailable. Please try again.' : submitError.message);
     } finally {
@@ -191,8 +205,8 @@ function SellPropertyForm({ session, onCreated }) {
 
   return (
     <section className="account-view sell-view">
-      <span className="auth-kicker">For property owners</span>
-      <h2>List your property</h2>
+      <span className="auth-kicker">{isEditing ? 'Update your listing' : 'For property owners'}</span>
+      <h2>{isEditing ? 'Edit property' : 'List your property'}</h2>
       <p className="account-lede">Share your home with people looking for a place just like yours. Buyers can contact you directly by email.</p>
       <form className="listing-form" onSubmit={submit}>
         <label className="listing-field listing-field-wide">Property title
@@ -230,14 +244,59 @@ function SellPropertyForm({ session, onCreated }) {
         <label className="listing-field listing-field-wide">Description
           <textarea maxLength="3000" rows="4" value={form.description} onChange={event => updateField('description', event.target.value)} placeholder="Tell buyers what makes this home special." />
         </label>
-        <label className="listing-field listing-field-wide">Property photo (JPG, PNG, or WebP; max 5 MB)
-          <input required type="file" accept="image/jpeg,image/png,image/webp" onChange={selectPhoto} />
+        <label className="listing-field listing-field-wide">Property photos (JPG, PNG, or WebP; up to 5 photos, 5 MB total)
+          <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={selectPhotos} />
         </label>
-        {imageUrl && <img className="listing-photo-preview" src={imageUrl} alt="Preview of your property listing" />}
+        {photos.length > 0 && <div className="listing-photo-grid">{photos.map((photo, index) => <div className="listing-photo-item" key={`${index}-${photo.slice(-24)}`}><img className="listing-photo-preview" src={photo} alt={`Property photo ${index + 1}`} /><button className="photo-remove" type="button" onClick={() => setPhotos(current => current.filter((_, photoIndex) => photoIndex !== index))} aria-label={`Remove photo ${index + 1}`}>Remove</button></div>)}</div>}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="btn btn-primary listing-submit" type="submit" disabled={saving}>{saving ? 'Publishing listing...' : 'Publish property'}</button>
+        <div className="listing-form-actions">
+          <button className="btn btn-primary listing-submit" type="submit" disabled={saving}>{saving ? (isEditing ? 'Saving changes...' : 'Publishing listing...') : (isEditing ? 'Save changes' : 'Publish property')}</button>
+          {isEditing && <button className="btn btn-secondary" type="button" disabled={saving} onClick={onCancel}>Cancel</button>}
+        </div>
       </form>
     </section>
+  );
+}
+
+function PropertyDetailsModal({ property, session, accountReady, favorites, favoritesBusy, onClose, onToggleFavorite, onEdit }) {
+  const photos = property.photos?.length ? property.photos : [property.imageUrl];
+  const [activePhoto, setActivePhoto] = useState(0);
+  const isOwner = session && Number(property.ownerId) === Number(session.id);
+
+  useEffect(() => setActivePhoto(0), [property.id]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <section className="property-modal" onClick={event => event.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close details">×</button>
+        <div className="property-gallery">
+          <img className="modal-image" src={photos[activePhoto] || property.imageUrl} alt={`${property.name}, photo ${activePhoto + 1}`} />
+          {photos.length > 1 && <div className="gallery-thumbnails" aria-label="Property photos">{photos.map((photo, index) => <button className={`gallery-thumbnail ${index === activePhoto ? 'active' : ''}`} key={`${index}-${photo.slice(-20)}`} onClick={() => setActivePhoto(index)} aria-label={`Show photo ${index + 1}`} aria-pressed={index === activePhoto}><img src={photo} alt="" /></button>)}</div>}
+        </div>
+        <div className="modal-content">
+          <div className="modal-title">
+            <div><span className="eyebrow">{property.propertyType} · {property.location}</span><h2>{property.name}</h2></div>
+            <button className={`favorite-button large ${favorites.includes(property.id) ? 'saved' : ''}`} disabled={!session || !accountReady || favoritesBusy} onClick={() => onToggleFavorite(property.id)} aria-label={favorites.includes(property.id) ? 'Remove from saved homes' : 'Save property'}>{favorites.includes(property.id) ? '♥' : '♡'}</button>
+          </div>
+          <strong className="modal-price">{`₹${Number(property.actualPrice).toLocaleString()}`}</strong>
+          <p className="modal-description">{property.description}</p>
+          <div className="detail-grid">
+            <span><b>{property.bhk}</b> bedrooms</span><span><b>{property.bathrooms}</b> bathrooms</span>
+            <span><b>{property.size}</b> sq ft</span><span><b>{property.yearBuilt || 'Not specified'}</b> built</span>
+            <span><b>{property.monthlyRent ? `₹${Number(property.monthlyRent).toLocaleString()}` : 'Not specified'}</b> estimated rent</span>
+            <span><b>{`₹${Math.round(property.actualPrice / property.size).toLocaleString()}`}</b> per sq ft</span>
+          </div>
+          <div className="amenities modal-amenities">{property.amenities.map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div>
+          <div className="seller-contact">
+            <span>{property.sellerEmail ? `Listed by ${property.sellerName}` : 'Seller contact details are not available for this listing.'}</span>
+            <div className="listing-actions">
+              {isOwner && <button className="btn btn-secondary" onClick={() => onEdit(property)}>Edit listing</button>}
+              {property.sellerEmail && <a className="btn btn-primary" href={`mailto:${property.sellerEmail}?subject=${encodeURIComponent(`Property enquiry: ${property.name}`)}`}>Email seller</a>}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -252,6 +311,7 @@ export default function App() {
   const [properties, setProperties] = useState([]);
   const [myProperties, setMyProperties] = useState([]);
   const [myPropertiesError, setMyPropertiesError] = useState('');
+  const [editingProperty, setEditingProperty] = useState(null);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -492,6 +552,21 @@ export default function App() {
     setMyProperties(current => [property, ...current]);
     setActiveView('discover');
     fetchLocations();
+    fetchProperties();
+  };
+  const handlePropertySaved = property => {
+    setMyProperties(current => [property, ...current.filter(item => item.id !== property.id)]);
+    setProperties(current => current.map(item => item.id === property.id ? { ...item, ...property } : item));
+    setEditingProperty(null);
+    setSelectedProperty(property);
+    setActiveView('discover');
+    fetchLocations();
+    fetchProperties();
+  };
+  const beginEditProperty = property => {
+    setSelectedProperty(null);
+    setEditingProperty(property);
+    setActiveView('sell');
   };
   const signOut = () => {
     localStorage.removeItem(SESSION_KEY);
@@ -531,7 +606,7 @@ export default function App() {
         <div className="header-actions"><span className="badge">{modelTrained ? '● Market ready' : '○ Preparing market'}</span><button className="header-avatar" onClick={() => setActiveView('profile')}>{session.name?.charAt(0).toUpperCase()}</button></div>
       </header>
       {accountError && <div className="account-sync-error" role="alert"><span>{accountError}</span><button onClick={() => setAccountReload(value => value + 1)}>Retry</button></div>}
-      {activeView !== 'discover' ? <main className="account-main">{activeView === 'sell' ? <SellPropertyForm session={session} onCreated={handlePropertyCreated} /> : <><AccountView view={activeView} session={session} favorites={favorites} properties={properties} myProperties={myProperties} onSelectProperty={setSelectedProperty} onCreateListing={() => setActiveView('sell')} onSessionChange={setSession} onSignOut={signOut} />{myPropertiesError && activeView === 'my-listings' && <p className="form-error" role="alert">{myPropertiesError}</p>}</>}</main> : <div className="container">
+      {activeView !== 'discover' ? <main className="account-main">{activeView === 'sell' ? <SellPropertyForm key={editingProperty?.id || 'new-listing'} session={session} property={editingProperty} onSaved={editingProperty ? handlePropertySaved : handlePropertyCreated} onCancel={() => { setEditingProperty(null); setActiveView('my-listings'); }} /> : <><AccountView view={activeView} session={session} favorites={favorites} properties={properties} myProperties={myProperties} onSelectProperty={setSelectedProperty} onCreateListing={() => { setEditingProperty(null); setActiveView('sell'); }} onEditProperty={beginEditProperty} onSessionChange={setSession} onSignOut={signOut} />{myPropertiesError && activeView === 'my-listings' && <p className="form-error" role="alert">{myPropertiesError}</p>}</>}</main> : <div className="container">
         <aside className="sidebar">
           <section className="filters-section">
             <h3>🔍 Search Properties</h3>
@@ -586,7 +661,7 @@ export default function App() {
           <div className="properties-list full-results"><div className="list-heading"><div><span className="section-kicker">{recommendationCriteria ? 'Smart match results' : 'Curated for you'}</span><h3>{properties.length ? (recommendationCriteria ? 'Homes ranked for your needs' : 'Recommended homes') : 'No homes found'}</h3></div><div className="list-actions"><span>{favorites.length} saved</span></div></div>{loadError ? <div className="empty-state"><h3>{loadError}</h3><button className="btn btn-secondary" onClick={fetchProperties}>Try again</button></div> : <div className="cards-grid">{loading ? [1, 2, 3].map(index => <div className="property-skeleton" key={index} />) : properties.map(property => <article className={`property-card ${selectedProperty?.id === property.id ? 'active' : ''}`} key={property.id} onClick={() => setSelectedProperty(property)}><div className="card-image-wrap"><img className="card-image" src={property.imageUrl} alt={property.name} /><button className={`favorite-button ${favorites.includes(property.id) ? 'saved' : ''}`} disabled={!accountReady || favoritesBusy} onClick={event => { event.stopPropagation(); toggleFavorite(property.id); }} aria-label="Save property">{favorites.includes(property.id) ? '♥' : '♡'}</button></div><div className="card-content">{recommendationCriteria && <div className="match-score"><strong>{property.matchScore}% match</strong><span>{property.matchReasons?.slice(0, 3).join(' · ') || 'Based on your search'}</span></div>}<div className="card-header"><h4>{property.name}</h4><span className="price">{formatPrice(property.actualPrice)}</span></div><p className="property-meta">{property.propertyType} · {property.bhk} BHK · {property.bathrooms} bath · {property.size} sq ft</p><p className="property-location">📍 {property.location}</p><div className="amenities">{property.amenities.slice(0, 4).map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div><button className="btn btn-small" onClick={event => { event.stopPropagation(); setSelectedProperty(property); }}>View details →</button></div></article>)}</div>}{!loading && !loadError && properties.length === 0 && <div className="empty-state"><h3>No properties match these filters</h3><p>Try widening your budget or removing an amenity filter.</p></div>}</div>
         </main>
       </div>}
-      {selectedProperty && <div className="modal-backdrop" onClick={() => setSelectedProperty(null)}><section className="property-modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={() => setSelectedProperty(null)} aria-label="Close details">×</button><img className="modal-image" src={selectedProperty.imageUrl} alt={selectedProperty.name} /><div className="modal-content"><div className="modal-title"><div><span className="eyebrow">{selectedProperty.propertyType} · {selectedProperty.location}</span><h2>{selectedProperty.name}</h2></div><button className={`favorite-button large ${favorites.includes(selectedProperty.id) ? 'saved' : ''}`} disabled={!accountReady || favoritesBusy} onClick={() => toggleFavorite(selectedProperty.id)}>{favorites.includes(selectedProperty.id) ? '♥' : '♡'}</button></div><strong className="modal-price">{formatPrice(selectedProperty.actualPrice)}</strong><p className="modal-description">{selectedProperty.description}</p><div className="detail-grid"><span><b>{selectedProperty.bhk}</b> bedrooms</span><span><b>{selectedProperty.bathrooms}</b> bathrooms</span><span><b>{selectedProperty.size}</b> sq ft</span><span><b>{selectedProperty.yearBuilt || 'Not specified'}</b> built</span><span><b>{selectedProperty.monthlyRent ? formatPrice(selectedProperty.monthlyRent) : 'Not specified'}</b> estimated rent</span><span><b>{formatPrice(Math.round(selectedProperty.actualPrice / selectedProperty.size))}</b> per sq ft</span></div><div className="amenities modal-amenities">{selectedProperty.amenities.map(amenity => <span key={amenity} className="amenity-tag">{amenity}</span>)}</div>{selectedProperty.sellerEmail ? <div className="seller-contact"><span>Listed by {selectedProperty.sellerName}</span><a className="btn btn-primary" href={`mailto:${selectedProperty.sellerEmail}?subject=${encodeURIComponent(`Property enquiry: ${selectedProperty.name}`)}`}>Email seller</a></div> : <p className="seller-contact">Seller contact details are not available for this listing.</p>}</div></section></div>}
+      {selectedProperty && <PropertyDetailsModal property={selectedProperty} session={session} accountReady={accountReady} favorites={favorites} favoritesBusy={favoritesBusy} onClose={() => setSelectedProperty(null)} onToggleFavorite={toggleFavorite} onEdit={beginEditProperty} />}
     </div>
   );
 }

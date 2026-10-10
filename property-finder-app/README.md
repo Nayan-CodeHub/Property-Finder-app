@@ -12,10 +12,11 @@ An intelligent property search and discovery platform with **ML-based price pred
 - Listings are ranked with a match percentage and visible reasons based on the details provided
 
 ### 🏡 Buy and Sell Properties
-- Signed-in users can publish a property listing with its details, amenities, asking price, and a photo
+- Signed-in users can publish and edit their property listings, including their asking price and property details
+- A listing can include up to five JPG, PNG, or WebP photos; buyers can browse them in the property details gallery
 - Listings are saved to the local property database and appear in Discover search results for all users; Discover refreshes while open
 - Sellers can view their own listings; buyers can email a seller from the property details
-- Listing photos must be JPG, PNG, or WebP and no larger than 5 MB
+- Listing photos must be JPG, PNG, or WebP, with a maximum of five photos and 5 MB total
 - Saved homes are stored per signed-in account; account credentials, profile names, and saved homes use MongoDB when configured
 
 ### 💰 Dual Price Prediction Models

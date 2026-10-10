@@ -154,8 +154,8 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 const insertPropertySql = `
   INSERT INTO properties (
     name, location, latitude, longitude, bhk, size, furnished, actualPrice,
-    amenities, propertyType, bathrooms, yearBuilt, monthlyRent, description, imageUrl, ownerId
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    amenities, propertyType, bathrooms, yearBuilt, monthlyRent, description, imageUrl, photos, ownerId
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 let db;
 let SqlDatabase;
@@ -217,11 +217,14 @@ function saveDatabase() {
 }
 
 function insertProperty(property) {
+  const photos = Array.isArray(property.photos) && property.photos.length
+    ? property.photos
+    : [property.imageUrl];
   db.run(insertPropertySql, [
     property.name, property.location, property.latitude, property.longitude, property.bhk,
     property.size, Number(property.furnished), property.actualPrice, JSON.stringify(property.amenities),
     property.propertyType, property.bathrooms, property.yearBuilt, property.monthlyRent,
-    property.description, property.imageUrl, property.ownerId ?? null
+    property.description, property.imageUrl, JSON.stringify(photos), property.ownerId ?? null
   ]);
 }
 
@@ -248,7 +251,8 @@ async function initializeDatabase() {
       yearBuilt INTEGER,
       monthlyRent REAL,
       description TEXT NOT NULL,
-      imageUrl TEXT NOT NULL
+      imageUrl TEXT NOT NULL,
+      photos TEXT
     )
   `);
   db.exec(`
@@ -270,6 +274,9 @@ async function initializeDatabase() {
   const propertyColumns = queryRows('PRAGMA table_info(properties)').map(column => column.name);
   if (!propertyColumns.includes('ownerId')) {
     db.run('ALTER TABLE properties ADD COLUMN ownerId INTEGER REFERENCES users(id)');
+  }
+  if (!propertyColumns.includes('photos')) {
+    db.run('ALTER TABLE properties ADD COLUMN photos TEXT');
   }
 
   if (queryRows('SELECT COUNT(*) AS count FROM properties')[0].count === 0) {
@@ -366,11 +373,13 @@ async function initializeMongoDatabase() {
 }
 
 function propertyFromRow(row) {
+  const photos = row.photos ? JSON.parse(row.photos) : [row.imageUrl];
   return {
     ...row,
     ownerId: row.ownerId === null || row.ownerId === undefined ? null : Number(row.ownerId),
     furnished: Boolean(row.furnished),
-    amenities: JSON.parse(row.amenities)
+    amenities: JSON.parse(row.amenities),
+    photos: photos.length ? photos : [row.imageUrl]
   };
 }
 
@@ -931,42 +940,67 @@ app.post('/api/train-model', async (req, res) => {
   }
 });
 
-// Add new property
-app.post('/api/properties', async (req, res) => {
-  const user = await authenticatedUser(req);
-  if (!user) return res.status(401).json({ error: 'Sign in to list a property' });
-
+function normalizePropertyInput(body) {
+  const photos = Array.isArray(body.photos) ? body.photos : [body.imageUrl];
+  const validPhotos = photos.length > 0 && photos.length <= 5 &&
+    photos.every(photo => {
+      if (typeof photo !== 'string') return false;
+      const match = photo.match(/^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+=*)$/);
+      return match && Buffer.from(match[1], 'base64').length > 0;
+    });
+  const totalPhotoBytes = validPhotos
+    ? photos.reduce((total, photo) => total + Buffer.from(photo.split(',')[1], 'base64').length, 0)
+    : 0;
   const {
     name, location, bhk, size, furnished, actualPrice,
     amenities, propertyType = 'Apartment', bathrooms = 1, yearBuilt = null,
-    monthlyRent = null, description = '', imageUrl = ''
-  } = req.body;
-
+    monthlyRent = null, description = ''
+  } = body;
   const nameValue = String(name || '').trim();
   const locationValue = String(location || '').trim();
-  const imageValue = String(imageUrl || '');
-  const imageMatch = imageValue.match(/^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+=*)$/);
-  const imageSize = imageMatch ? Buffer.from(imageMatch[1], 'base64').length : 0;
-  const validImage = imageMatch && imageSize > 0 && imageSize <= 5 * 1024 * 1024;
 
-  if (!nameValue || nameValue.length > 120 || !locationValue || locationValue.length > 120 ||
+  if (!validPhotos || totalPhotoBytes > 5 * 1024 * 1024 ||
+      !nameValue || nameValue.length > 120 || !locationValue || locationValue.length > 120 ||
       !Number.isInteger(Number(bhk)) || Number(bhk) < 1 || Number(bhk) > 20 ||
       !Number.isFinite(Number(size)) || Number(size) <= 0 ||
       typeof furnished !== 'boolean' || !Number.isFinite(Number(actualPrice)) || Number(actualPrice) <= 0 ||
       !Array.isArray(amenities) || amenities.length > 20 ||
+      !amenities.every(amenity => typeof amenity === 'string' && amenity.length <= 80) ||
       !['Apartment', 'Villa', 'Penthouse'].includes(propertyType) ||
       !Number.isInteger(Number(bathrooms)) || Number(bathrooms) < 1 || Number(bathrooms) > 30 ||
       (yearBuilt !== null && (!Number.isInteger(Number(yearBuilt)) || Number(yearBuilt) < 1800 || Number(yearBuilt) > new Date().getFullYear() + 2)) ||
-      (description && String(description).length > 3000) || !validImage) {
-    return res.status(400).json({ error: 'Invalid property data' });
+      (monthlyRent !== null && (!Number.isFinite(Number(monthlyRent)) || Number(monthlyRent) <= 0)) ||
+      (description && String(description).length > 3000)) {
+    return null;
   }
 
+  return {
+    name: nameValue,
+    location: locationValue,
+    bhk: Number(bhk),
+    size: Number(size),
+    furnished,
+    actualPrice: Number(actualPrice),
+    amenities,
+    propertyType,
+    bathrooms: Number(bathrooms),
+    yearBuilt: yearBuilt === null ? null : Number(yearBuilt),
+    monthlyRent: monthlyRent === null ? null : Number(monthlyRent),
+    description: String(description).trim(),
+    imageUrl: photos[0],
+    photos
+  };
+}
+
+// Add a property listing.
+app.post('/api/properties', async (req, res) => {
+  const user = await authenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Sign in to list a property' });
+  const propertyInput = normalizePropertyInput(req.body);
+  if (!propertyInput) return res.status(400).json({ error: 'Invalid property data' });
+
   const newProperty = {
-    name: nameValue, location: locationValue, latitude: 0, longitude: 0, bhk: Number(bhk),
-    size: Number(size), furnished, actualPrice: Number(actualPrice), amenities,
-    propertyType, bathrooms: Number(bathrooms), yearBuilt: yearBuilt === null ? null : Number(yearBuilt),
-    monthlyRent: monthlyRent === null ? null : Number(monthlyRent), description: String(description).trim(),
-    imageUrl: imageValue, ownerId: user.id
+    ...propertyInput, latitude: 0, longitude: 0, ownerId: user.id
   };
   try {
     insertProperty(newProperty);
@@ -978,6 +1012,50 @@ app.post('/api/properties', async (req, res) => {
   } catch (error) {
     console.error('Error saving property listing:', error);
     res.status(500).json({ error: 'Unable to save this property listing' });
+  }
+});
+
+app.put('/api/properties/:id', async (req, res) => {
+  const user = await authenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Sign in to edit a property listing' });
+
+  const propertyId = Number(req.params.id);
+  if (!Number.isSafeInteger(propertyId) || propertyId < 1) {
+    return res.status(400).json({ error: 'Invalid property ID' });
+  }
+  const propertyInput = normalizePropertyInput(req.body);
+  if (!propertyInput) return res.status(400).json({ error: 'Invalid property data' });
+
+  try {
+    const [existingProperty] = queryRows('SELECT ownerId FROM properties WHERE id = ?', [propertyId]);
+    if (!existingProperty) return res.status(404).json({ error: 'Property not found' });
+    if (Number(existingProperty.ownerId) !== Number(user.id)) {
+      return res.status(403).json({ error: 'You can only edit your own property listings' });
+    }
+
+    db.run(`
+      UPDATE properties SET
+        name = ?, location = ?, bhk = ?, size = ?, furnished = ?, actualPrice = ?,
+        amenities = ?, propertyType = ?, bathrooms = ?, yearBuilt = ?, monthlyRent = ?,
+        description = ?, imageUrl = ?, photos = ?
+      WHERE id = ?
+    `, [
+      propertyInput.name, propertyInput.location, propertyInput.bhk, propertyInput.size,
+      Number(propertyInput.furnished), propertyInput.actualPrice, JSON.stringify(propertyInput.amenities),
+      propertyInput.propertyType, propertyInput.bathrooms, propertyInput.yearBuilt, propertyInput.monthlyRent,
+      propertyInput.description, propertyInput.imageUrl, JSON.stringify(propertyInput.photos), propertyId
+    ]);
+    await saveDatabase();
+    const [updatedRow] = queryRows(`
+      SELECT properties.*, users.name AS sellerName, users.email AS sellerEmail
+      FROM properties
+      LEFT JOIN users ON properties.ownerId = users.id
+      WHERE properties.id = ?
+    `, [propertyId]);
+    res.json(propertyFromRow(updatedRow));
+  } catch (error) {
+    console.error('Error updating property listing:', error);
+    res.status(500).json({ error: 'Unable to update this property listing' });
   }
 });
 
